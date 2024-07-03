@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 add_library(
-  tcp-device SHARED
+  tcp-device STATIC
   "GPI2_TCP.c"
   "GPI2_TCP_ATOMIC.c"
   "GPI2_TCP_GRP.c"
