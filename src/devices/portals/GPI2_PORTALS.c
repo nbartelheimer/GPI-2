@@ -29,6 +29,21 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_Dev.h"
 #include "GPI2_PORTALS.h"
 
+int wait_for_completion(ptl_handle_eq_t eq_h){
+	ptl_event_t event;
+
+	if(PTL_OK != (PtlEQWait(eq_h,&event))){
+		return GASPI_ERROR;
+	}
+	if(PTL_EVENT_LINK != event.type){
+		return GASPI_ERROR;
+	}
+	if(PTL_NI_OK != event.type){
+		return GASPI_ERROR;
+	}
+	return PTL_OK;
+}
+
 int pgaspi_dev_init_core(gaspi_context_t* const gctx) {
 	int ret, i;
 	ptl_ni_limits_t ni_req_limits;
@@ -230,8 +245,12 @@ int pgaspi_dev_init_core(gaspi_context_t* const gctx) {
 	                  PTL_PRIORITY_LIST,
 	                  NULL,
 	                  &portals4_dev_ctx->data_le_h);
-	if (ret != PTL_OK) {
+	if (PTL_OK != ret) {
 		GASPI_DEBUG_PRINT_ERROR("PtlLEAppend failded with %d", ret);
+		return GASPI_ERROR;
+	}
+
+	if(PTL_OK != (wait_for_completion(portals4_dev_ctx->eq_h))){
 		return GASPI_ERROR;
 	}
 
@@ -277,32 +296,7 @@ int pgaspi_dev_init_core(gaspi_context_t* const gctx) {
 		return GASPI_ERROR;
 	}
 
-	ptl_event_t event;
-	ret = PtlEQWait(portals4_dev_ctx->eq_h, &event);
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlEQWait failed with %d", ret);
-		return GASPI_ERROR;
-	}
-	if (event.type != PTL_EVENT_LINK) {
-		GASPI_DEBUG_PRINT_ERROR("Event type does not match");
-		return GASPI_ERROR;
-	}
-	if (event.ni_fail_type != PTL_NI_OK) {
-		GASPI_DEBUG_PRINT_ERROR("Linking of LE failed");
-		return GASPI_ERROR;
-	}
-
-	ret = PtlEQWait(portals4_dev_ctx->passive_comm_eq_h, &event);
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlEQWait failed with %d", ret);
-		return GASPI_ERROR;
-	}
-	if (event.type != PTL_EVENT_LINK) {
-		GASPI_DEBUG_PRINT_ERROR("Event type does not match");
-		return GASPI_ERROR;
-	}
-	if (event.ni_fail_type != PTL_NI_OK) {
-		GASPI_DEBUG_PRINT_ERROR("Linking of LE failed");
+	if(PTL_OK != (wait_for_completion(portals4_dev_ctx->passive_comm_eq_h))){
 		return GASPI_ERROR;
 	}
 
