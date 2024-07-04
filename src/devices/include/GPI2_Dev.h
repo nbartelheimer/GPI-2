@@ -193,4 +193,28 @@ gaspi_return_t pgaspi_dev_passive_receive(gaspi_context_t* const,
                                           const gaspi_size_t,
                                           const gaspi_timeout_t);
 
+gaspi_return_t pgaspi_dev_vector_write(gaspi_context_t* const,
+                                       const gaspi_segment_id_t,
+                                       const gaspi_offset_t,
+				                       const gaspi_offset_t,
+				                       const gaspi_offset_t,
+				                       const gaspi_offset_t,
+                                       const gaspi_rank_t,
+                                       const gaspi_segment_id_t,
+                                       const gaspi_offset_t,
+                                       const gaspi_queue_id_t);
+
+gaspi_return_t pgaspi_dev_vector_write_notify(gaspi_context_t* const,
+                                       const gaspi_segment_id_t,
+                                       const gaspi_offset_t,
+				                       const gaspi_offset_t,
+				                       const gaspi_offset_t,
+				                       const gaspi_offset_t,
+                                       const gaspi_rank_t,
+                                       const gaspi_segment_id_t,
+                                       const gaspi_offset_t,
+                                       const gaspi_notification_id_t,
+                                       const gaspi_notification_t,
+                                       const gaspi_queue_id_t);
+
 #endif //_GPI2_DEV_H_

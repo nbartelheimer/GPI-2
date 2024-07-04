@@ -20,6 +20,7 @@ add_library(
   "GPI2_Stats.c"
   "GPI2_Threads.c"
   "GPI2_Utility.c"
+  "GPI2_Vector_access.c"
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE "include")
@@ -42,4 +43,4 @@ target_compile_options(${PROJECT_NAME} PRIVATE "-Wno-deprecated-declarations")
 
 include(GNUInstallDirs)
 install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES "include/GASPI_Ext.h" "include/GASPI.h" "include/GASPI_Threads.h" "include/GASPI_types.h" "include/PGASPI.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "include/GASPI_Vector_access.h" "include/GASPI_Ext.h" "include/GASPI.h" "include/GASPI_Threads.h" "include/GASPI_types.h" "include/PGASPI.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
