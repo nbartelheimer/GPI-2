@@ -35,14 +35,6 @@ gaspi_return_t pgaspi_dev_write(gaspi_context_t* const gctx,
 	const ptl_size_t remote_offset =
 	    gctx->rrmd[segment_id_remote][rank].data.addr + offset_remote;
 
-	if (gctx->ne_count_c[queue] == gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_write GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
-
 	ret = PtlPut(dev->comm_notif_md_h[queue],
 	             local_offset,
 	             size,
@@ -77,14 +69,6 @@ gaspi_return_t pgaspi_dev_read(gaspi_context_t* const gctx,
 	    gctx->rrmd[segment_id_local][gctx->rank].data.addr + offset_local;
 	const ptl_size_t remote_offset =
 	    gctx->rrmd[segment_id_remote][rank].data.addr + offset_remote;
-
-	if (gctx->ne_count_c[queue] == gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_read GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
 
 	ret = PtlGet(dev->comm_notif_md_h[queue],
 	             local_offset,
@@ -168,14 +152,6 @@ gaspi_return_t pgaspi_dev_write_list(
 	int ret;
 	gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*) gctx->device->ctx;
 
-	if (gctx->ne_count_c[queue] + num > gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_write_list GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
-
 	ret = PtlStartBundle(dev->ni_h);
 	if (ret != PTL_OK) {
 		GASPI_DEBUG_PRINT_ERROR("PtlBundleStart failed with %d", ret);
@@ -216,14 +192,6 @@ gaspi_return_t pgaspi_dev_read_list(gaspi_context_t* const gctx,
                                     const gaspi_queue_id_t queue) {
 	int ret;
 	gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*) gctx->device->ctx;
-
-	if (gctx->ne_count_c[queue] + num > gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_read_list GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
 
 	ret = PtlStartBundle(dev->ni_h);
 	if (ret != PTL_OK) {
@@ -271,13 +239,6 @@ gaspi_return_t pgaspi_dev_notify(gaspi_context_t* const gctx,
 	    gctx->rrmd[segment_id_remote][rank].notif_spc.addr +
 	    notification_id * sizeof(gaspi_notification_t);
 
-	if (gctx->ne_count_c[queue] == gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR("pgaspi_dev_ GASPI_QUEUE_FULL is: %d max: %d",
-		                        gctx->ne_count_c[queue],
-		                        gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
-
 	ret = PtlPut(dev->comm_notif_md_h[queue],
 	             local_offset,
 	             sizeof(gaspi_notification_t),
@@ -311,14 +272,6 @@ gaspi_return_t pgaspi_dev_write_notify(
     const gaspi_notification_t notification_value,
     const gaspi_queue_id_t queue) {
 	int ret;
-
-	if (gctx->ne_count_c[queue] + 2 > gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_write_notify GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
 
 	ret = pgaspi_dev_write(gctx,
 	                       segment_id_local,
@@ -360,14 +313,6 @@ gaspi_return_t pgaspi_dev_write_list_notify(
     const gaspi_queue_id_t queue) {
 	int ret;
 
-	if (gctx->ne_count_c[queue] + num + 1 > gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_write_list_notify GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
-
 	ret = pgaspi_dev_write_list(gctx,
 	                            num,
 	                            segment_id_local,
@@ -406,14 +351,6 @@ gaspi_return_t pgaspi_dev_read_notify(
     const gaspi_queue_id_t queue) {
 	int ret;
 	gaspi_portals4_ctx* const dev = gctx->device->ctx;
-
-	if (gctx->ne_count_c[queue] + 2 > gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_read_notify GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
 
 	ret = pgaspi_dev_read(gctx,
 	                      segment_id_local,
@@ -468,14 +405,6 @@ gaspi_return_t pgaspi_dev_read_list_notify(
 	int ret;
 	gaspi_portals4_ctx* const dev = gctx->device->ctx;
 
-	if (gctx->ne_count_c[queue] + num + 1 > gctx->config->queue_size_max) {
-		GASPI_DEBUG_PRINT_ERROR(
-		    "pgaspi_dev_read_list_notify GASPI_QUEUE_FULL is: %d max: %d",
-		    gctx->ne_count_c[queue],
-		    gctx->config->queue_size_max);
-		return GASPI_QUEUE_FULL;
-	}
-
 	ret = pgaspi_dev_read_list(gctx,
 	                           num,
 	                           segment_id_local,
@@ -510,6 +439,6 @@ gaspi_return_t pgaspi_dev_read_list_notify(
 		return GASPI_ERROR;
 	}
 
-		gctx->ne_count_c[queue]++;
+	gctx->ne_count_c[queue]++;
 	return GASPI_SUCCESS;
 }
