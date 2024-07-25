@@ -29,7 +29,7 @@ gaspi_return_t pgaspi_dev_passive_send(
 	const int byte_id = rank >> 3;
 	const int bit_pos = rank - (byte_id * 8);
 	const unsigned char bit_cmp = 1 << bit_pos;
-	gaspi_portals4_ctx * const dev = gctx->device->ctx;
+	gaspi_portals4_ctx* const dev = gctx->device->ctx;
 	const ptl_size_t local_offset =
 	    gctx->rrmd[segment_id_local][gctx->rank].data.addr + offset_local;
 	ptl_ct_event_t ce;
@@ -80,9 +80,8 @@ gaspi_return_t pgaspi_dev_passive_receive(
     gaspi_rank_t* const rank,
     const gaspi_size_t size,
     const gaspi_timeout_t timeout_ms) {
-	ptl_handle_me_t me_handle;
 	int ret;
-	gaspi_portals4_ctx * const dev = gctx->device->ctx;
+	gaspi_portals4_ctx* const dev = gctx->device->ctx;
 	ptl_event_t event;
 	unsigned int event_index;
 
