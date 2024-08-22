@@ -20,8 +20,11 @@ add_library(
   "GPI2_Stats.c"
   "GPI2_Threads.c"
   "GPI2_Utility.c"
-  "GPI2_Vector_access.c"
 )
+
+if(WITH_MPI)
+	find_package(MPI REQUIRED)
+endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE "include")
 target_link_libraries(
@@ -29,6 +32,7 @@ target_link_libraries(
   PRIVATE
     "$<$<BOOL:${WITH_IB}>:ib-device>" "$<$<BOOL:${WITH_PORTALS}>:portals-device>"
     "$<$<AND:$<NOT:$<BOOL:${WITH_IB}>>,$<NOT:$<BOOL:${WITH_PORTALS}>>>:tcp-device>"
+    "$<$<BOOL:${WITH_MPI}>:MPI::MPI_C>"
 )
 target_compile_definitions(
   ${PROJECT_NAME}
@@ -37,10 +41,11 @@ target_compile_definitions(
     "$<$<BOOL:${WITH_IB}>:GPI2_DEVICE_IB>"
     "$<$<BOOL:${WITH_PORTALS}>:GPI2_DEVICE_PORTALS>"
     "$<$<AND:$<NOT:$<BOOL:${WITH_IB}>>,$<NOT:$<BOOL:${WITH_PORTALS}>>>:GPI2_DEVICE_TCP>"
+    "$<$<BOOL:${WITH_MPI}>:GPI2_WITH_MPI>"
 )
 target_compile_features(${PROJECT_NAME} PRIVATE c_std_11)
-target_compile_options(${PROJECT_NAME} PRIVATE "-Wno-deprecated-declarations")
+target_compile_options(${PROJECT_NAME} PRIVATE "-Wno-deprecated-declarations" "-fPIC")
 
 include(GNUInstallDirs)
 install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES "include/GASPI_Vector_access.h" "include/GASPI_Ext.h" "include/GASPI.h" "include/GASPI_Threads.h" "include/GASPI_types.h" "include/PGASPI.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "include/GASPI_Ext.h" "include/GASPI.h" "include/GASPI_Threads.h" "include/GASPI_types.h" "include/PGASPI.h" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
