@@ -1,5 +1,6 @@
 /*
-Copyright (c) Goethe University Frankfurt MSQC - Niklas Bartelheimer <bartelheimer@em.uni-frankfurt.de>, 2023-2026
+Copyright (c) Goethe University Frankfurt MSQC - Niklas Bartelheimer
+<bartelheimer@em.uni-frankfurt.de>, 2023-2026
 
 This file is part of GPI-2.
 
@@ -20,425 +21,396 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_PORTALS.h"
 
 /* Communication functions */
-gaspi_return_t pgaspi_dev_write(gaspi_context_t* const gctx,
-                                const gaspi_segment_id_t segment_id_local,
-                                const gaspi_offset_t offset_local,
-                                const gaspi_rank_t rank,
-                                const gaspi_segment_id_t segment_id_remote,
-                                const gaspi_offset_t offset_remote,
-                                const gaspi_size_t size,
-                                const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = gctx->device->ctx;
-	const ptl_size_t local_offset =
-	    gctx->rrmd[segment_id_local][gctx->rank].data.addr + offset_local;
-	const ptl_size_t remote_offset =
-	    gctx->rrmd[segment_id_remote][rank].data.addr + offset_remote;
+gaspi_return_t
+pgaspi_dev_write(gaspi_context_t* const gctx,
+                 const gaspi_segment_id_t segment_id_local,
+                 const gaspi_offset_t offset_local, const gaspi_rank_t rank,
+                 const gaspi_segment_id_t segment_id_remote,
+                 const gaspi_offset_t offset_remote, const gaspi_size_t size,
+                 const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = gctx->device->ctx;
+  const ptl_size_t local_offset =
+      gctx->rrmd[segment_id_local][gctx->rank].data.addr + offset_local;
+  const ptl_size_t remote_offset =
+      gctx->rrmd[segment_id_remote][rank].data.addr + offset_remote;
 
-	ret = PtlPut(dev->comm_notif_md_h[queue],
-	             local_offset,
-	             size,
-	             PORTALS4_ACK_TYPE,
-	             dev->remote_info[rank].phys_address,
-	             dev->data_pt_idx,
-	             0,
-	             remote_offset,
-	             NULL,
-	             0);
+  if(gctx->ne_count_c[queue] == PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlPut failed with %d for size %d", ret, size);
-		return GASPI_ERROR;
-	}
+  ret = PtlPut(dev->comm_notif_md_h[queue], local_offset, size,
+               PORTALS4_ACK_TYPE, dev->remote_info[rank].phys_address,
+               dev->data_pt_idx, 0, remote_offset, (void*)(uintptr_t)rank, 0);
 
-	gctx->ne_count_c[queue]++;
-	return GASPI_SUCCESS;
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlPut failed with %d for size %d", ret, size);
+    return GASPI_ERROR;
+  }
+
+  gctx->ne_count_c[queue]++;
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_read(gaspi_context_t* const gctx,
-                               const gaspi_segment_id_t segment_id_local,
-                               const gaspi_offset_t offset_local,
-                               const gaspi_rank_t rank,
-                               const gaspi_segment_id_t segment_id_remote,
-                               const gaspi_offset_t offset_remote,
-                               const gaspi_size_t size,
-                               const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = gctx->device->ctx;
-	const ptl_size_t local_offset =
-	    gctx->rrmd[segment_id_local][gctx->rank].data.addr + offset_local;
-	const ptl_size_t remote_offset =
-	    gctx->rrmd[segment_id_remote][rank].data.addr + offset_remote;
+gaspi_return_t
+pgaspi_dev_read(gaspi_context_t* const gctx,
+                const gaspi_segment_id_t segment_id_local,
+                const gaspi_offset_t offset_local, const gaspi_rank_t rank,
+                const gaspi_segment_id_t segment_id_remote,
+                const gaspi_offset_t offset_remote, const gaspi_size_t size,
+                const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = gctx->device->ctx;
+  const ptl_size_t local_offset =
+      gctx->rrmd[segment_id_local][gctx->rank].data.addr + offset_local;
+  const ptl_size_t remote_offset =
+      gctx->rrmd[segment_id_remote][rank].data.addr + offset_remote;
 
-	ret = PtlGet(dev->comm_notif_md_h[queue],
-	             local_offset,
-	             size,
-	             dev->remote_info[rank].phys_address,
-	             dev->data_pt_idx,
-	             0,
-	             remote_offset,
-	             NULL);
+  if(gctx->ne_count_c[queue] == PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlGet failed with %d for size %d", ret, size);
-		return GASPI_ERROR;
-	}
+  ret = PtlGet(dev->comm_notif_md_h[queue], local_offset, size,
+               dev->remote_info[rank].phys_address, dev->data_pt_idx, 0,
+               remote_offset, (void*)(uintptr_t)rank);
 
-	gctx->ne_count_c[queue]++;
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlGet failed with %d for size %d", ret, size);
+    return GASPI_ERROR;
+  }
 
-	return GASPI_SUCCESS;
+  gctx->ne_count_c[queue]++;
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_purge(gaspi_context_t* const gctx,
-                                const gaspi_queue_id_t queue,
-                                const gaspi_timeout_t timeout_ms) {
-	int ret;
-	unsigned int which;
-	ptl_ct_event_t ce;
-	gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*) gctx->device->ctx;
-	const ptl_size_t nr =
-	    (ptl_size_t) gctx->ne_count_c[queue] + dev->comm_notif_ct_cnt[queue];
+gaspi_return_t
+pgaspi_dev_purge(gaspi_context_t* const gctx, const gaspi_queue_id_t queue,
+                 const gaspi_timeout_t timeout_ms) {
+  int ret;
+  unsigned int which;
+  ptl_ct_event_t ce;
+  gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*)gctx->device->ctx;
+  const ptl_size_t nr =
+      (ptl_size_t)gctx->ne_count_c[queue] + dev->comm_notif_ct_cnt[queue];
 
-	ret = PtlCTPoll(
-	    &dev->comm_notif_ct_h[queue], &nr, 1, timeout_ms, &ce, &which);
+  ret =
+      PtlCTPoll(&dev->comm_notif_ct_h[queue], &nr, 1, timeout_ms, &ce, &which);
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlCTPoll failed with %d", ret);
-		return ret == PTL_CT_NONE_REACHED ? GASPI_TIMEOUT : GASPI_ERROR;
-	}
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlCTPoll failed with %d", ret);
+    return ret == PTL_CT_NONE_REACHED ? GASPI_TIMEOUT : GASPI_ERROR;
+  }
 
-	gctx->ne_count_c[queue] = 0;
-	dev->comm_notif_ct_cnt[queue] = ce.success;
-	return GASPI_SUCCESS;
+  gctx->ne_count_c[queue] = 0;
+  dev->comm_notif_ct_cnt[queue] = ce.success;
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_wait(gaspi_context_t* const gctx,
-                               const gaspi_queue_id_t queue,
-                               const gaspi_timeout_t timeout_ms) {
-	int ret;
-	ptl_ct_event_t ce;
-	unsigned int which;
-	gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*) gctx->device->ctx;
-	const ptl_size_t nr =
-	    (ptl_size_t) gctx->ne_count_c[queue] + dev->comm_notif_ct_cnt[queue];
+gaspi_return_t
+pgaspi_dev_wait(gaspi_context_t* const gctx, const gaspi_queue_id_t queue,
+                const gaspi_timeout_t timeout_ms) {
+  int ret;
+  ptl_ct_event_t ce;
+  unsigned int which;
+  gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*)gctx->device->ctx;
+  const ptl_size_t nr =
+      (ptl_size_t)gctx->ne_count_c[queue] + dev->comm_notif_ct_cnt[queue];
 
-	ret = PtlCTPoll(
-	    &dev->comm_notif_ct_h[queue], &nr, 1, timeout_ms, &ce, &which);
+  ret =
+      PtlCTPoll(&dev->comm_notif_ct_h[queue], &nr, 1, timeout_ms, &ce, &which);
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlCTPoll failed with %d", ret);
-		return ret == PTL_CT_NONE_REACHED ? GASPI_TIMEOUT : GASPI_ERROR;
-	}
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlCTPoll failed with %d", ret);
+    return ret == PTL_CT_NONE_REACHED ? GASPI_TIMEOUT : GASPI_ERROR;
+  }
 
-	if (ce.failure > 0) {
-		GASPI_DEBUG_PRINT_ERROR("Comm queue %d might be broken!", queue);
-		return GASPI_ERROR;
-	}
-	gctx->ne_count_c[queue] = 0;
-	dev->comm_notif_ct_cnt[queue] = ce.success;
-	return GASPI_SUCCESS;
+  if(ce.failure > 0) {
+    for(int i = 0; i < ce.failure; ++i) {
+      ptl_event_t event;
+      unsigned int event_idx;
+      PtlEQPoll(&dev->comm_notif_err_eq_h[queue], 1, timeout_ms, &event,
+                &event_idx);
+      gaspi_rank_t rank = (gaspi_rank_t)(uintptr_t)event.user_ptr;
+      gctx->state_vec[queue][rank] = GASPI_STATE_CORRUPT;
+    }
+    GASPI_DEBUG_PRINT_ERROR("Comm queue %d might be broken!", queue);
+    return GASPI_ERROR;
+  }
+
+  gctx->ne_count_c[queue] = 0;
+  dev->comm_notif_ct_cnt[queue] = ce.success;
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_write_list(
-    gaspi_context_t* const gctx,
-    const gaspi_number_t num,
-    gaspi_segment_id_t* const segment_id_local,
-    gaspi_offset_t* const offset_local,
-    const gaspi_rank_t rank,
-    gaspi_segment_id_t* const segment_id_remote,
-    gaspi_offset_t* const offset_remote,
-    gaspi_size_t* const size,
-    const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*) gctx->device->ctx;
+gaspi_return_t
+pgaspi_dev_write_list(gaspi_context_t* const gctx, const gaspi_number_t num,
+                      gaspi_segment_id_t* const segment_id_local,
+                      gaspi_offset_t* const offset_local,
+                      const gaspi_rank_t rank,
+                      gaspi_segment_id_t* const segment_id_remote,
+                      gaspi_offset_t* const offset_remote,
+                      gaspi_size_t* const size, const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*)gctx->device->ctx;
 
-	ret = PtlStartBundle(dev->ni_h);
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlBundleStart failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  if(gctx->ne_count_c[queue] + num > PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	for (gaspi_number_t i = 0; i < num; ++i) {
-		ret = pgaspi_dev_write(gctx,
-		                       segment_id_local[i],
-		                       offset_local[i],
-		                       rank,
-		                       segment_id_remote[i],
-		                       offset_remote[i],
-		                       size[i],
-		                       queue);
-		if (ret != GASPI_SUCCESS) {
-			return ret;
-		}
-	}
+  ret = PtlStartBundle(dev->ni_h);
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlBundleStart failed with %d", ret);
+    return GASPI_ERROR;
+  }
 
-	ret = PtlEndBundle(dev->ni_h);
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlEndBundle failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  for(gaspi_number_t i = 0; i < num; ++i) {
+    ret = pgaspi_dev_write(gctx, segment_id_local[i], offset_local[i], rank,
+                           segment_id_remote[i], offset_remote[i], size[i],
+                           queue);
+    if(ret != GASPI_SUCCESS) {
+      return ret;
+    }
+  }
 
-	return GASPI_SUCCESS;
+  ret = PtlEndBundle(dev->ni_h);
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlEndBundle failed with %d", ret);
+    return GASPI_ERROR;
+  }
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_read_list(gaspi_context_t* const gctx,
-                                    const gaspi_number_t num,
-                                    gaspi_segment_id_t* const segment_id_local,
-                                    gaspi_offset_t* const offset_local,
-                                    const gaspi_rank_t rank,
-                                    gaspi_segment_id_t* const segment_id_remote,
-                                    gaspi_offset_t* const offset_remote,
-                                    gaspi_size_t* const size,
-                                    const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*) gctx->device->ctx;
+gaspi_return_t
+pgaspi_dev_read_list(gaspi_context_t* const gctx, const gaspi_number_t num,
+                     gaspi_segment_id_t* const segment_id_local,
+                     gaspi_offset_t* const offset_local,
+                     const gaspi_rank_t rank,
+                     gaspi_segment_id_t* const segment_id_remote,
+                     gaspi_offset_t* const offset_remote,
+                     gaspi_size_t* const size, const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*)gctx->device->ctx;
 
-	ret = PtlStartBundle(dev->ni_h);
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlBundleStart failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  if(gctx->ne_count_c[queue] + num > PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	for (gaspi_number_t i = 0; i < num; ++i) {
-		ret = pgaspi_dev_read(gctx,
-		                      segment_id_local[i],
-		                      offset_local[i],
-		                      rank,
-		                      segment_id_remote[i],
-		                      offset_remote[i],
-		                      size[i],
-		                      queue);
-		if (ret != GASPI_SUCCESS) {
-			return ret;
-		}
-	}
+  ret = PtlStartBundle(dev->ni_h);
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlBundleStart failed with %d", ret);
+    return GASPI_ERROR;
+  }
 
-	ret = PtlEndBundle(dev->ni_h);
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlEndBundle failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  for(gaspi_number_t i = 0; i < num; ++i) {
+    ret =
+        pgaspi_dev_read(gctx, segment_id_local[i], offset_local[i], rank,
+                        segment_id_remote[i], offset_remote[i], size[i], queue);
+    if(ret != GASPI_SUCCESS) {
+      return ret;
+    }
+  }
 
-	return GASPI_SUCCESS;
+  ret = PtlEndBundle(dev->ni_h);
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlEndBundle failed with %d", ret);
+    return GASPI_ERROR;
+  }
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_notify(gaspi_context_t* const gctx,
-                                 const gaspi_segment_id_t segment_id_remote,
-                                 const gaspi_rank_t rank,
-                                 const gaspi_notification_id_t notification_id,
-                                 const gaspi_notification_t notification_value,
-                                 const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = gctx->device->ctx;
-	((gaspi_notification_t*) gctx->nsrc.notif_spc.buf)[notification_id] =
-	    notification_value;
-	const ptl_size_t local_offset =
-	    gctx->nsrc.notif_spc.addr +
-	    notification_id * sizeof(gaspi_notification_t);
-	const ptl_size_t remote_offset =
-	    gctx->rrmd[segment_id_remote][rank].notif_spc.addr +
-	    notification_id * sizeof(gaspi_notification_t);
+gaspi_return_t
+pgaspi_dev_notify(gaspi_context_t* const gctx,
+                  const gaspi_segment_id_t segment_id_remote,
+                  const gaspi_rank_t rank,
+                  const gaspi_notification_id_t notification_id,
+                  const gaspi_notification_t notification_value,
+                  const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = gctx->device->ctx;
+  ((gaspi_notification_t*)gctx->nsrc.notif_spc.buf)[notification_id] =
+      notification_value;
+  const ptl_size_t local_offset =
+      gctx->nsrc.notif_spc.addr +
+      notification_id * sizeof(gaspi_notification_t);
+  const ptl_size_t remote_offset =
+      gctx->rrmd[segment_id_remote][rank].notif_spc.addr +
+      notification_id * sizeof(gaspi_notification_t);
 
-	ret = PtlPut(dev->comm_notif_md_h[queue],
-	             local_offset,
-	             sizeof(gaspi_notification_t),
-	             PORTALS4_ACK_TYPE,
-	             dev->remote_info[rank].phys_address,
-	             dev->data_pt_idx,
-	             0,
-	             remote_offset,
-	             NULL,
-	             0);
+  if(gctx->ne_count_c[queue] == PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlPut failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  ret = PtlPut(dev->comm_notif_md_h[queue], local_offset,
+               sizeof(gaspi_notification_t), PORTALS4_ACK_TYPE,
+               dev->remote_info[rank].phys_address, dev->data_pt_idx, 0,
+               remote_offset, (void*)(uintptr_t)rank, 0);
 
-	gctx->ne_count_c[queue]++;
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlPut failed with %d", ret);
+    return GASPI_ERROR;
+  }
 
-	return GASPI_SUCCESS;
+  gctx->ne_count_c[queue]++;
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_write_notify(
-    gaspi_context_t* const gctx,
-    const gaspi_segment_id_t segment_id_local,
-    const gaspi_offset_t offset_local,
-    const gaspi_rank_t rank,
-    const gaspi_segment_id_t segment_id_remote,
-    const gaspi_offset_t offset_remote,
-    const gaspi_size_t size,
-    const gaspi_notification_id_t notification_id,
-    const gaspi_notification_t notification_value,
-    const gaspi_queue_id_t queue) {
-	int ret;
+gaspi_return_t
+pgaspi_dev_write_notify(gaspi_context_t* const gctx,
+                        const gaspi_segment_id_t segment_id_local,
+                        const gaspi_offset_t offset_local,
+                        const gaspi_rank_t rank,
+                        const gaspi_segment_id_t segment_id_remote,
+                        const gaspi_offset_t offset_remote,
+                        const gaspi_size_t size,
+                        const gaspi_notification_id_t notification_id,
+                        const gaspi_notification_t notification_value,
+                        const gaspi_queue_id_t queue) {
+  int ret;
 
-	ret = pgaspi_dev_write(gctx,
-	                       segment_id_local,
-	                       offset_local,
-	                       rank,
-	                       segment_id_remote,
-	                       offset_remote,
-	                       size,
-	                       queue);
-	if (ret != GASPI_SUCCESS) {
-		return ret;
-	}
+  if(gctx->ne_count_c[queue] + 2 > PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	ret = pgaspi_dev_notify(gctx,
-	                        segment_id_remote,
-	                        rank,
-	                        notification_id,
-	                        notification_value,
-	                        queue);
-	if (ret != GASPI_SUCCESS) {
-		return ret;
-	}
+  ret = pgaspi_dev_write(gctx, segment_id_local, offset_local, rank,
+                         segment_id_remote, offset_remote, size, queue);
+  if(ret != GASPI_SUCCESS) {
+    return ret;
+  }
 
-	return GASPI_SUCCESS;
+  ret = pgaspi_dev_notify(gctx, segment_id_remote, rank, notification_id,
+                          notification_value, queue);
+  if(ret != GASPI_SUCCESS) {
+    return ret;
+  }
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_write_list_notify(
-    gaspi_context_t* const gctx,
-    const gaspi_number_t num,
-    gaspi_segment_id_t* const segment_id_local,
-    gaspi_offset_t* const offset_local,
-    const gaspi_rank_t rank,
-    gaspi_segment_id_t* const segment_id_remote,
-    gaspi_offset_t* const offset_remote,
-    gaspi_size_t* const size,
-    const gaspi_segment_id_t segment_id_notification,
-    const gaspi_notification_id_t notification_id,
-    const gaspi_notification_t notification_value,
-    const gaspi_queue_id_t queue) {
-	int ret;
+gaspi_return_t
+pgaspi_dev_write_list_notify(gaspi_context_t* const gctx,
+                             const gaspi_number_t num,
+                             gaspi_segment_id_t* const segment_id_local,
+                             gaspi_offset_t* const offset_local,
+                             const gaspi_rank_t rank,
+                             gaspi_segment_id_t* const segment_id_remote,
+                             gaspi_offset_t* const offset_remote,
+                             gaspi_size_t* const size,
+                             const gaspi_segment_id_t segment_id_notification,
+                             const gaspi_notification_id_t notification_id,
+                             const gaspi_notification_t notification_value,
+                             const gaspi_queue_id_t queue) {
+  int ret;
 
-	ret = pgaspi_dev_write_list(gctx,
-	                            num,
-	                            segment_id_local,
-	                            offset_local,
-	                            rank,
-	                            segment_id_remote,
-	                            offset_remote,
-	                            size,
-	                            queue);
-	if (ret != GASPI_SUCCESS) {
-		return ret;
-	}
+  if(gctx->ne_count_c[queue] + num + 1 > PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	ret = pgaspi_dev_notify(gctx,
-	                        segment_id_notification,
-	                        rank,
-	                        notification_id,
-	                        notification_value,
-	                        queue);
-	if (ret != GASPI_SUCCESS) {
-		return ret;
-	}
+  ret = pgaspi_dev_write_list(gctx, num, segment_id_local, offset_local, rank,
+                              segment_id_remote, offset_remote, size, queue);
+  if(ret != GASPI_SUCCESS) {
+    return ret;
+  }
 
-	return GASPI_SUCCESS;
+  ret = pgaspi_dev_notify(gctx, segment_id_notification, rank, notification_id,
+                          notification_value, queue);
+  if(ret != GASPI_SUCCESS) {
+    return ret;
+  }
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_read_notify(
-    gaspi_context_t* const gctx,
-    const gaspi_segment_id_t segment_id_local,
-    const gaspi_offset_t offset_local,
-    const gaspi_rank_t rank,
-    const gaspi_segment_id_t segment_id_remote,
-    const gaspi_offset_t offset_remote,
-    const gaspi_size_t size,
-    const gaspi_notification_id_t notification_id,
-    const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = gctx->device->ctx;
+gaspi_return_t
+pgaspi_dev_read_notify(gaspi_context_t* const gctx,
+                       const gaspi_segment_id_t segment_id_local,
+                       const gaspi_offset_t offset_local,
+                       const gaspi_rank_t rank,
+                       const gaspi_segment_id_t segment_id_remote,
+                       const gaspi_offset_t offset_remote,
+                       const gaspi_size_t size,
+                       const gaspi_notification_id_t notification_id,
+                       const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = gctx->device->ctx;
 
-	ret = pgaspi_dev_read(gctx,
-	                      segment_id_local,
-	                      offset_local,
-	                      rank,
-	                      segment_id_remote,
-	                      offset_remote,
-	                      size,
-	                      queue);
-	if (ret != GASPI_SUCCESS) {
-		return ret;
-	}
+  if(gctx->ne_count_c[queue] + 2 > PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	const ptl_size_t local_offset =
-	    gctx->rrmd[segment_id_local][gctx->rank].notif_spc.addr +
-	    notification_id * sizeof(gaspi_notification_t);
-	const ptl_size_t remote_offset =
-	    gctx->rrmd[segment_id_remote][rank].notif_spc.addr +
-	    NOTIFICATIONS_SPACE_SIZE - sizeof(gaspi_notification_t);
+  ret = pgaspi_dev_read(gctx, segment_id_local, offset_local, rank,
+                        segment_id_remote, offset_remote, size, queue);
+  if(ret != GASPI_SUCCESS) {
+    return ret;
+  }
 
-	ret = PtlGet(dev->comm_notif_md_h[queue],
-	             local_offset,
-	             sizeof(gaspi_notification_t),
-	             dev->remote_info[rank].phys_address,
-	             dev->data_pt_idx,
-	             0,
-	             remote_offset,
-	             NULL);
+  const ptl_size_t local_offset =
+      gctx->rrmd[segment_id_local][gctx->rank].notif_spc.addr +
+      notification_id * sizeof(gaspi_notification_t);
+  const ptl_size_t remote_offset =
+      gctx->rrmd[segment_id_remote][rank].notif_spc.addr +
+      NOTIFICATIONS_SPACE_SIZE - sizeof(gaspi_notification_t);
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlGet failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  ret =
+      PtlGet(dev->comm_notif_md_h[queue], local_offset,
+             sizeof(gaspi_notification_t), dev->remote_info[rank].phys_address,
+             dev->data_pt_idx, 0, remote_offset, (void*)(uintptr_t)rank);
 
-	gctx->ne_count_c[queue]++;
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlGet failed with %d", ret);
+    return GASPI_ERROR;
+  }
 
-	return GASPI_SUCCESS;
+  gctx->ne_count_c[queue]++;
+
+  return GASPI_SUCCESS;
 }
 
-gaspi_return_t pgaspi_dev_read_list_notify(
-    gaspi_context_t* const gctx,
-    const gaspi_number_t num,
-    gaspi_segment_id_t* const segment_id_local,
-    gaspi_offset_t* const offset_local,
-    const gaspi_rank_t rank,
-    gaspi_segment_id_t* const segment_id_remote,
-    gaspi_offset_t* const offset_remote,
-    gaspi_size_t* const size,
-    const gaspi_segment_id_t segment_id_notification,
-    const gaspi_notification_id_t notification_id,
-    const gaspi_queue_id_t queue) {
-	int ret;
-	gaspi_portals4_ctx* const dev = gctx->device->ctx;
+gaspi_return_t
+pgaspi_dev_read_list_notify(gaspi_context_t* const gctx,
+                            const gaspi_number_t num,
+                            gaspi_segment_id_t* const segment_id_local,
+                            gaspi_offset_t* const offset_local,
+                            const gaspi_rank_t rank,
+                            gaspi_segment_id_t* const segment_id_remote,
+                            gaspi_offset_t* const offset_remote,
+                            gaspi_size_t* const size,
+                            const gaspi_segment_id_t segment_id_notification,
+                            const gaspi_notification_id_t notification_id,
+                            const gaspi_queue_id_t queue) {
+  int ret;
+  gaspi_portals4_ctx* const dev = gctx->device->ctx;
 
-	ret = pgaspi_dev_read_list(gctx,
-	                           num,
-	                           segment_id_local,
-	                           offset_local,
-	                           rank,
-	                           segment_id_remote,
-	                           offset_remote,
-	                           size,
-	                           queue);
-	if (ret != GASPI_SUCCESS) {
-		return ret;
-	}
+  if(gctx->ne_count_c[queue] + num + 1 > PTL_SIZE_MAX) {
+    return GASPI_QUEUE_FULL;
+  }
 
-	const ptl_size_t local_offset =
-	    gctx->rrmd[segment_id_notification][gctx->rank].notif_spc.addr +
-	    notification_id * sizeof(gaspi_notification_t);
-	const ptl_size_t remote_offset =
-	    gctx->rrmd[segment_id_notification][rank].notif_spc.addr +
-	    NOTIFICATIONS_SPACE_SIZE - sizeof(gaspi_notification_t);
+  ret = pgaspi_dev_read_list(gctx, num, segment_id_local, offset_local, rank,
+                             segment_id_remote, offset_remote, size, queue);
+  if(ret != GASPI_SUCCESS) {
+    return ret;
+  }
 
-	ret = PtlGet(dev->comm_notif_md_h[queue],
-	             local_offset,
-	             sizeof(gaspi_notification_t),
-	             dev->remote_info[rank].phys_address,
-	             dev->data_pt_idx,
-	             0,
-	             remote_offset,
-	             NULL);
+  const ptl_size_t local_offset =
+      gctx->rrmd[segment_id_notification][gctx->rank].notif_spc.addr +
+      notification_id * sizeof(gaspi_notification_t);
+  const ptl_size_t remote_offset =
+      gctx->rrmd[segment_id_notification][rank].notif_spc.addr +
+      NOTIFICATIONS_SPACE_SIZE - sizeof(gaspi_notification_t);
 
-	if (ret != PTL_OK) {
-		GASPI_DEBUG_PRINT_ERROR("PtlGet failed with %d", ret);
-		return GASPI_ERROR;
-	}
+  ret =
+      PtlGet(dev->comm_notif_md_h[queue], local_offset,
+             sizeof(gaspi_notification_t), dev->remote_info[rank].phys_address,
+             dev->data_pt_idx, 0, remote_offset, (void*)(uintptr_t)rank);
 
-	gctx->ne_count_c[queue]++;
-	return GASPI_SUCCESS;
+  if(ret != PTL_OK) {
+    GASPI_DEBUG_PRINT_ERROR("PtlGet failed with %d", ret);
+    return GASPI_ERROR;
+  }
+
+  gctx->ne_count_c[queue]++;
+  return GASPI_SUCCESS;
 }
