@@ -29,12 +29,18 @@ if WITH_INFINIBAND_EXT
 default_includes += -DGPI2_EXP_VERBS
 endif
 else
+if WITH_PORTALS4
+SRCS += devices/portals4/GPI2_PORTALS4.c devices/portals4/GPI2_PORTALS4_ATOMIC.c devices/portals4/GPI2_PORTALS4_GRP.c \
+       devices/portals4/GPI2_PORTALS4_PASSIVE.c devices/portals4/GPI2_PORTALS4_IO.c devices/portals4/GPI2_PORTALS4_SEG.c
+default_includes += -I$(abs_top_srcdir)/src/devices/portals4 @ac_inc_portals4@ -DGPI2_DEVICE_PORTALS4
+else
 SRCS += devices/tcp/list.c devices/tcp/rb.c devices/tcp/tcp_device.c \
 devices/tcp/GPI2_TCP.c devices/tcp/GPI2_TCP_IO.c devices/tcp/GPI2_TCP_SEG.c \
 devices/tcp/GPI2_TCP_PASSIVE.c devices/tcp/GPI2_TCP_ATOMIC.c \
 devices/tcp/GPI2_TCP_GRP.c
 SRCS += devices/tcp/GPI2_TCP.h devices/tcp/list.h devices/tcp/rb.h devices/tcp/tcp_device.h
 default_includes += -I$(abs_top_srcdir)/src/devices/tcp -DGPI2_DEVICE_TCP
+endif
 endif
 
 # MPI MODE
@@ -46,6 +52,11 @@ endif
 # INFINIBAND
 if WITH_INFINIBAND
 lib_default_cflags += @ac_lib_infiniband@
+endif
+
+# PORTALS4
+if WITH_PORTALS4
+lib_default_cflags += @ac_lib_portals4@
 endif
 
 # LOADLEVER SUPPORT
@@ -102,8 +113,13 @@ if WITH_INFINIBAND
 install-data-hook:
 	echo "Libs.private: @ac_lib_infiniband@ -pthread" >> $(libdir)/pkgconfig/GPI2.pc
 else
+if WITH_PORTALS4
+install-data-hook:
+	echo "Libs.private: @ac_lib_portals4@ -pthread" >> $(libdir)/pkgconfig/GPI2.pc
+else
 install-data-hook:
 	echo "Libs.private: -lrt -pthread" >> $(libdir)/pkgconfig/GPI2.pc
+endif
 endif
 
 # CLEAN

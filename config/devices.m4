@@ -2,21 +2,42 @@
 # Check and select device
 # ----------------------------------
 AC_DEFUN([ACX_USABLE_DEVICE],[
-        if test x${with_infiniband} != xno -a x${with_ethernet} != xno; then
-           TITLE([Checking for device(s):])
-           AC_MSG_ERROR([Concurrently Infiniband and Ethernet is not supported])
-        elif test x${with_infiniband} != xno -a x${with_ethernet} = xno; then
-           TITLE([Checking for Infiniband])
-           ACX_INFINIBAND
-           if test x${HAVE_INFINIBAND} = x0; then
-              AC_MSG_ERROR([Infiniband requested, but can not use it])
-           fi
-        elif test x${with_infiniband} = xno -a x${with_ethernet} != xno; then
-           TITLE([Checking for Ethernet])
-           ACX_ETHERNET
-           if test x${HAVE_TCP} = x0; then
-              AC_MSG_ERROR([Ethernet requested, but can not use it])
-           fi
+	device_counter=0
+	if test x${with_infiniband} != xno; then
+	   device_counter=$((device_counter + 1))
+	fi
+
+	if test x${with_portals4} != xno; then
+	   device_counter=$((device_counter + 1))
+	fi
+
+	if test x${with_ethernet} != xno; then
+	   device_counter=$((device_counter + 1))
+	fi
+
+	if test ${device_counter} -gt 1; then
+	   TITLE([Checking for device(s):])
+           AC_MSG_ERROR([Using devices concurrently is not supported])
+	fi
+
+	if test x${with_infiniband} != xno; then
+	   TITLE([Checking for InfiniBand])
+	   ACX_INFINIBAND
+	   if test x${HAVE_INFINIBAND} = x0; then
+	      AC_MSG_ERROR([InfiniBand requested, but can not use it])
+	   fi
+	elif test x${with_portals4} != xno; then
+	   TITLE([Checking for Portals4])
+	   ACX_PORTALS4
+	   if test x${HAVE_PORTALS4} = x0; then
+	      AC_MSG_ERROR([Portals4 requested, but can not use it])
+	   fi
+	elif test x${with_ethernet} != xno; then
+	   TITLE([Checking for Ethernet])
+	   ACX_ETHERNET
+	   if test x${HAVE_TCP} = x0; then
+	      AC_MSG_ERROR([Ethernet requested, but can not use it])
+	   fi
         else
 	   TITLE([Infiniband or Ethernet is required, checking for Infiniband...])
            with_infiniband=yes
@@ -36,6 +57,10 @@ AC_DEFUN([ACX_USABLE_DEVICE],[
         if [test x${HAVE_TCP} = x1]; then
            options="$options Ethernet"
         fi
+	AM_CONDITIONAL([WITH_PORTALS4], test x${HAVE_PORTALS4} = x1)
+	if [test x${HAVE_PORTALS4} = x1]; then
+	   options="$options Portals4"
+	fi
         AM_CONDITIONAL([WITH_INFINIBAND],[test x${HAVE_INFINIBAND} = x1])
  	AM_CONDITIONAL([WITH_INFINIBAND_EXT],[test x${HAVE_INFINIBAND_EXT} = x1 -a x$infiniband_ext != xno])
         if [test x${HAVE_INFINIBAND} = x1]; then
@@ -182,4 +207,80 @@ AS_IF(test `./conftest_ib.exe; echo $?` -gt 0,
 # ----------------------------------
 AC_DEFUN([ACX_ETHERNET],[
 	AC_CHECK_HEADER(netinet/tcp.h,[HAVE_TCP=1],[HAVE_TCP=0])
+	])
+
+################################################
+# Check and set PORTALS4 path
+# ----------------------------------
+AC_DEFUN([ACX_PORTALS4],[
+	   if test "x$with_portals4" != xyes; then
+	      # Check in "standard" paths
+	      inc_path=include
+	      ac_inc_portals4=$with_portals4/$inc_path
+	      AC_CHECK_FILE($ac_inc_portals4/portals4.h,[HAVE_PORTALS4_HEADER=1],[HAVE_PORTALS4_HEADER=0])
+	      for lib_path in lib lib64; do
+	      	  for portals4_lib in libportals.a libportals.so; do
+	      	      ac_lib_portals4=$with_portals4/$lib_path
+	      	      AC_CHECK_FILE($ac_lib_portals4/$portals4_lib,[HAVE_PORTALS4_LIB=1],[HAVE_PORTALS4_LIB=0])
+	      	      if test ${HAVE_PORTALS4_LIB} -eq 1; then
+		      	 break
+		      fi
+		  done
+	      	  if test ${HAVE_PORTALS4_LIB} -eq 1; then
+		     break
+		  fi
+	      done
+	   else
+	      # Try to determine include path(s)
+	      inc_paths=`cpp -v /dev/null >& cppt`
+	      inc_paths=`sed -n '/^#include </,/^End/p' cppt | sed '1d;$d'`
+	      rm -f cppt
+	      for p4inc in $inc_paths; do
+	      	  ac_inc_portals4=$p4inc
+		  AC_CHECK_FILE($ac_inc_portals4/portals4.h,
+		  	      	  [HAVE_PORTALS4_HEADER=1],[HAVE_PORTALS4_HEADER=0])
+	      	  if [test ${HAVE_PORTALS4_HEADER} -eq 1]; then
+	      	     break
+	      	  fi
+	      done
+	      # Try to determine library path(s)
+	      for p4inc in $inc_paths; do
+	      	  ac_path_portals4=${p4inc%/include*}
+		  for p4lib in libportals.so libportals.a; do
+	              for p4lib_path in lib lib64; do
+	      	      	  ac_lib_portals4=$ac_path_portals/$p4lib_path
+		  	  AC_CHECK_FILE($ac_lib_portals4/$p4lib,[HAVE_PORTALS4_LIB=1],[HAVE_PORTALS4_LIB=0])
+		          if test ${HAVE_PORTALS4_LIB} -eq 1; then
+	      	      	     break
+		          fi
+		      done
+	              if test ${HAVE_PORTALS4_LIB} -eq 1; then
+	              	 break
+	  	      fi
+  		  done
+		  if test ${HAVE_PORTALS4_LIB} -eq 1; then
+	             break
+	  	  fi
+	      done
+	      # If the above lib search fails, use autotools
+	      if test ${HAVE_PORTALS4_LIB} -ne 1; then
+ 	         ac_lib_portals4 =
+	      	 AC_CHECK_LIB([portals4],[PtlInit],[HAVE_PORTALS4_LIB=1],[HAVE_PORTALS4_LIB=0])
+  	      fi
+   	   fi
+
+	   if test ${HAVE_PORTALS4_HEADER} -eq 1 -a ${HAVE_PORTALS4_LIB} -eq 1; then
+	      HAVE_PORTALS4=1
+	      if test -z $ac_inc_portals4; then
+	      	 AC_SUBST([ac_inc_portals4],[-I$ac_inc_portals4])
+	      fi
+	      if test -t $ac_lib_portals4; then
+		 AC_SUBST([ac_lib_portals4],[-l$portals4_lib])
+	      else
+		 AC_SUBST([ac_lib_portals4],["-L$ac_lib_portals4 -lportals"])
+	      fi
+	      AC_MSG_RESULT([linkler flags: $ac_lib_portals4])
+	   else
+	      HAVE_PORTALS4=0
+	   fi
 	])

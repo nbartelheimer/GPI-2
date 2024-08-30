@@ -147,6 +147,11 @@ AC_ARG_ENABLE([infiniband-ext],[AS_HELP_STRING([--enable-infiniband-ext],[build/
 			       [infiniband_ext=$enableval],
 			       [infiniband_ext=no])
 
+# CHECKS PORTALS4
+AC_ARG_WITH([portals4],[AS_HELP_STRING([--with-portals4], [compile for portals4])],
+			 [with_portals4=$withval],
+			 [with_portals4=no])
+
 # CHECKS ETHERNET
 AC_ARG_WITH([ethernet],[AS_HELP_STRING([--with-ethernet], [compile for ethernet])],
 		       [with_ethernet=$withval],
