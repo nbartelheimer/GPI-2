@@ -16,15 +16,9 @@ You should have received a copy of the GNU General Public License
 along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* #include <errno.h> */
-/* #include <sys/mman.h> */
-/* #include <sys/time.h> */
-/* #include <sys/timeb.h> */
-/* #include <unistd.h> */
-
 #include "GASPI.h"
 #include "GPI2.h"
-#include "GPI2_PORTALS.h"
+#include "GPI2_PORTALS4.h"
 
 int pgaspi_dev_register_mem(gaspi_context_t const* const GASPI_UNUSED(gctx),
                             gaspi_rc_mseg_t* GASPI_UNUSED(seg)) {
