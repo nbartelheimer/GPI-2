@@ -18,7 +18,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 */
 #include "GASPI.h"
 #include "GPI2.h"
-#include "GPI2_PORTALS.h"
+#include "GPI2_PORTALS4.h"
 
 gaspi_return_t
 pgaspi_dev_atomic_fetch_add(gaspi_context_t* const gctx,
@@ -27,7 +27,6 @@ pgaspi_dev_atomic_fetch_add(gaspi_context_t* const gctx,
                             const gaspi_rank_t rank,
                             const gaspi_atomic_value_t val_add) {
   int ret;
-  int nnr;
   ptl_ct_event_t ce;
   gaspi_portals4_ctx* const dev = gctx->device->ctx;
   const ptl_size_t remote_offset =
