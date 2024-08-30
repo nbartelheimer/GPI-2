@@ -19,9 +19,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #ifndef GPI2_UTILITY_H
 #define GPI2_UTILITY_H 1
 
-
 #include <errno.h>
-#define _GNU_SOURCE
 #include <sched.h>
 #include <string.h>
 #include <stdlib.h>

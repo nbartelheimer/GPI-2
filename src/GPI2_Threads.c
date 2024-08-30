@@ -16,8 +16,6 @@ You should have received a copy of the GNU General Public License
 along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#define _GNU_SOURCE  // Important for CPU_SETSIZE etc. 
-
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
