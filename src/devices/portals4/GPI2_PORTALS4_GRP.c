@@ -19,7 +19,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GASPI.h"
 #include "GPI2.h"
 #include "GPI2_Coll.h"
-#include "GPI2_PORTALS.h"
+#include "GPI2_PORTALS4.h"
 #include <sys/mman.h>
 #include <sys/timeb.h>
 #include <unistd.h>
