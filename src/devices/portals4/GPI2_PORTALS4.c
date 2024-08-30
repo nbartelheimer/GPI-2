@@ -28,7 +28,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 
 #include "GPI2.h"
 #include "GPI2_Dev.h"
-#include "GPI2_PORTALS.h"
+#include "GPI2_PORTALS4.h"
 
 int
 pgaspi_dev_init_core(gaspi_context_t* const gctx) {
@@ -138,7 +138,7 @@ pgaspi_dev_init_core(gaspi_context_t* const gctx) {
     return GASPI_ERROR;
   }
 
-  if(ni_limits.features & PTL_TARGET_BIND_INACCESSIBLE == 0) {
+  if((ni_limits.features & PTL_TARGET_BIND_INACCESSIBLE) == 0) {
     GASPI_DEBUG_PRINT_ERROR(
         "Interface does not support PTL_TARGET_BIND_INACCESSIBLE feature");
     pgaspi_dev_cleanup_core(gctx);
@@ -232,7 +232,6 @@ pgaspi_dev_init_core(gaspi_context_t* const gctx) {
     return GASPI_ERROR;
   }
 
-  const ptl_uid_t uid = PTL_UID_ANY;
   ptl_le_t data_le = {
       .start = NULL,
       .length = PTL_SIZE_MAX,
@@ -592,7 +591,7 @@ pgaspi_dev_cleanup_core(gaspi_context_t* const gctx) {
     }
   }
 
-  if(!dev->passive_comm_pt_idx != PTL_PT_ANY) {
+  if(!(dev->passive_comm_pt_idx != PTL_PT_ANY)) {
     ret = PtlPTFree(dev->ni_h, dev->passive_comm_pt_idx);
     if(ret != PTL_OK) {
       GASPI_DEBUG_PRINT_ERROR("PtlPTFree failed with %d", ret);
@@ -600,7 +599,7 @@ pgaspi_dev_cleanup_core(gaspi_context_t* const gctx) {
     }
   }
 
-  if(!dev->data_pt_idx != PTL_PT_ANY) {
+  if(!(dev->data_pt_idx != PTL_PT_ANY)) {
     ret = PtlPTFree(dev->ni_h, dev->data_pt_idx);
     if(ret != PTL_OK) {
       GASPI_DEBUG_PRINT_ERROR("PtlPTFree failed with %d", ret);
