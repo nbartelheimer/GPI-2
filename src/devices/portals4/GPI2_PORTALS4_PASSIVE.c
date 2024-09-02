@@ -24,7 +24,8 @@ pgaspi_dev_passive_send(gaspi_context_t* const gctx,
                         const gaspi_segment_id_t segment_id_local,
                         const gaspi_offset_t offset_local,
                         const gaspi_rank_t rank, const gaspi_size_t size,
-                        const gaspi_timeout_t timeout_ms) {
+                        const gaspi_timeout_t timeout_ms)
+{
   int ret;
   const int byte_id = rank >> 3;
   const int bit_pos = rank - (byte_id * 8);
@@ -36,7 +37,8 @@ pgaspi_dev_passive_send(gaspi_context_t* const gctx,
 
   const ptl_size_t nnr = dev->passive_comm_ct_cnt + 1;
 
-  if(gctx->ne_count_p[byte_id] & bit_cmp) {
+  if(gctx->ne_count_p[byte_id] & bit_cmp)
+  {
     goto checkL;
   }
 
@@ -46,7 +48,8 @@ pgaspi_dev_passive_send(gaspi_context_t* const gctx,
                PORTALS4_PASSIVE_ACK_TYPE, dev->remote_info[rank].phys_address,
                dev->passive_comm_pt_idx, 0, 0, NULL, 0);
 
-  if(ret != PTL_OK) {
+  if(ret != PTL_OK)
+  {
     GASPI_DEBUG_PRINT_ERROR("PtlPut failed with %d", ret);
     return GASPI_ERROR;
   }
@@ -55,7 +58,8 @@ checkL:
   unsigned int ce_index;
   ret = PtlCTPoll(&dev->passive_comm_ct_h, &nnr, 1, timeout_ms, &ce, &ce_index);
 
-  if(ret != PTL_OK) {
+  if(ret != PTL_OK)
+  {
     GASPI_DEBUG_PRINT_ERROR("PtlCTPoll failed with %d", ret);
     return ret == PTL_EQ_EMPTY ? GASPI_TIMEOUT : GASPI_ERROR;
   }
@@ -70,7 +74,8 @@ pgaspi_dev_passive_receive(gaspi_context_t* const gctx,
                            const gaspi_segment_id_t segment_id_local,
                            const gaspi_offset_t offset_local,
                            gaspi_rank_t* const rank, const gaspi_size_t size,
-                           const gaspi_timeout_t timeout_ms) {
+                           const gaspi_timeout_t timeout_ms)
+{
   int ret;
   gaspi_portals4_ctx* const dev = gctx->device->ctx;
   ptl_event_t event;
@@ -78,28 +83,33 @@ pgaspi_dev_passive_receive(gaspi_context_t* const gctx,
 
   ret = PtlEQPoll(&dev->passive_comm_eq_h, 1, timeout_ms, &event, &event_index);
 
-  if(ret != PTL_OK) {
+  if(ret != PTL_OK)
+  {
     GASPI_DEBUG_PRINT_ERROR("PtlEQPoll failed with %d", ret);
     return ret == PTL_EQ_EMPTY ? GASPI_TIMEOUT : GASPI_ERROR;
   }
 
-  if(PTL_NI_OK != event.ni_fail_type) {
+  if(PTL_NI_OK != event.ni_fail_type)
+  {
     GASPI_DEBUG_PRINT_ERROR("Passive receive event error %d",
                             event.ni_fail_type);
     return GASPI_ERROR;
   }
 
   *rank = 0xffff;
-  for(int i = 0; i < gctx->tnc; ++i) {
+  for(int i = 0; i < gctx->tnc; ++i)
+  {
     ptl_process_t initiator = dev->remote_info[i].phys_address;
     if(event.initiator.phys.nid == initiator.phys.nid &&
-       event.initiator.phys.pid == initiator.phys.pid) {
+       event.initiator.phys.pid == initiator.phys.pid)
+    {
       *rank = i;
       break;
     }
   }
 
-  if(*rank == 0xffff) {
+  if(*rank == 0xffff)
+  {
     return GASPI_ERROR;
   }
   void* dest = (void*)(gctx->rrmd[segment_id_local][gctx->rank].data.addr +

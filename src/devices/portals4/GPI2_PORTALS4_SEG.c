@@ -1,5 +1,6 @@
 /*
-Copyright (c) Goethe University Frankfurt MSQC - Niklas Bartelheimer<bartelheimer@em.uni-frankfurt.de>, 2023-2026
+Copyright (c) Goethe University Frankfurt MSQC - Niklas
+Bartelheimer<bartelheimer@em.uni-frankfurt.de>, 2023-2026
 
 This file is part of GPI-2.
 
@@ -20,12 +21,16 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2.h"
 #include "GPI2_PORTALS4.h"
 
-int pgaspi_dev_register_mem(gaspi_context_t const* const GASPI_UNUSED(gctx),
-                            gaspi_rc_mseg_t* GASPI_UNUSED(seg)) {
-	return GASPI_SUCCESS;
+int
+pgaspi_dev_register_mem(gaspi_context_t const* const GASPI_UNUSED(gctx),
+                        gaspi_rc_mseg_t* GASPI_UNUSED(seg))
+{
+  return GASPI_SUCCESS;
 }
 
-int pgaspi_dev_unregister_mem(gaspi_context_t const* const GASPI_UNUSED(gctx),
-                              gaspi_rc_mseg_t* GASPI_UNUSED(seg)) {
-	return GASPI_SUCCESS;
+int
+pgaspi_dev_unregister_mem(gaspi_context_t const* const GASPI_UNUSED(gctx),
+                          gaspi_rc_mseg_t* GASPI_UNUSED(seg))
+{
+  return GASPI_SUCCESS;
 }
