@@ -9,3 +9,4 @@ SpaceBeforeParens: Never
 ColumnLimit: 80
 AlignOperands: true
 AlwaysBreakAfterReturnType: TopLevelDefinitions
+BreakBeforeBraces: Allman
