@@ -25,6 +25,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 
 #define PORTALS4_DATA_PT_INDEX 0
 #define PORTALS4_PASSIVE_PT_INDEX 1
+#define PORTALS4_NOTIFICATION_PT_INDEX 2
 
 #define PORTALS4_DATA_PT_EVENT_SLOTS (1)
 #define PORTALS4_ACK_TYPE PTL_ACK_REQ
@@ -50,6 +51,10 @@ typedef struct
   ptl_handle_md_t passive_comm_md_h;
   ptl_handle_md_t comm_notif_md_h[GASPI_MAX_QP];
 
+  // Notification Portal
+  ptl_handle_le_t notification_le_h;
+  ptl_pt_index_t notification_pt_idx;
+
   // Data Space Portal
   ptl_handle_le_t data_le_h;
   ptl_pt_index_t data_pt_idx;
@@ -68,6 +73,7 @@ typedef struct
   ptl_handle_eq_t comm_notif_err_eq_h[GASPI_MAX_QP];
   ptl_handle_eq_t group_atomic_err_eq_h;
   ptl_handle_eq_t passive_comm_eq_h;
+  ptl_handle_eq_t notification_eq_h;
 
   // CT Event Counter
   ptl_size_t group_atomic_ct_cnt;

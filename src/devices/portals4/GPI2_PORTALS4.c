@@ -200,6 +200,16 @@ pgaspi_dev_init_core(gaspi_context_t* const gctx)
     return GASPI_ERROR;
   }
 
+  ret = PtlEQAlloc(portals4_dev_ctx->ni_h, queue_size_max,
+                   &portals4_dev_ctx->notification_eq_h);
+
+  if(ret != PTL_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("PtlEQAlloc failed with %d", ret);
+    pgaspi_dev_cleanup_core(gctx);
+    return GASPI_ERROR;
+  }
+
   ret = PtlEQAlloc(portals4_dev_ctx->ni_h, passive_queue_size_max,
                    &portals4_dev_ctx->passive_comm_eq_h);
 
@@ -253,6 +263,17 @@ pgaspi_dev_init_core(gaspi_context_t* const gctx)
     return GASPI_ERROR;
   }
 
+  ret = PtlPTAlloc(
+      portals4_dev_ctx->ni_h, 0, portals4_dev_ctx->notification_eq_h,
+      PORTALS4_NOTIFICATION_PT_INDEX, &portals4_dev_ctx->notification_pt_idx);
+
+  if(ret != PTL_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("PtlPTAlloc failed with %d", ret);
+    pgaspi_dev_cleanup_core(gctx);
+    return GASPI_ERROR;
+  }
+
   ptl_le_t data_le = {
       .start = NULL,
       .length = PTL_SIZE_MAX,
@@ -265,6 +286,24 @@ pgaspi_dev_init_core(gaspi_context_t* const gctx)
   ret = PtlLEAppend(portals4_dev_ctx->ni_h, portals4_dev_ctx->data_pt_idx,
                     &data_le, PTL_PRIORITY_LIST, NULL,
                     &portals4_dev_ctx->data_le_h);
+
+  if(ret != PTL_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("PtlLEAppend failded with %d", ret);
+    return GASPI_ERROR;
+  }
+
+  ptl_le_t notification_le = {
+      .start = NULL,
+      .length = PTL_SIZE_MAX,
+      .uid = PTL_UID_ANY,
+      .options = PTL_LE_OP_PUT | PTL_LE_EVENT_UNLINK_DISABLE,
+      .ct_handle = PTL_CT_NONE,
+  };
+
+  ret = PtlLEAppend(portals4_dev_ctx->ni_h, portals4_dev_ctx->notification_pt_idx,
+                    &notification_le, PTL_PRIORITY_LIST, NULL,
+                    &portals4_dev_ctx->notification_le_h);
 
   if(ret != PTL_OK)
   {
@@ -357,6 +396,25 @@ pgaspi_dev_init_core(gaspi_context_t* const gctx)
     return GASPI_ERROR;
   }
 
+  ret = PtlEQWait(portals4_dev_ctx->notification_eq_h, &event);
+
+  if(ret != PTL_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("PtlEQWait failed with %d", ret);
+    return GASPI_ERROR;
+  }
+
+  if(event.type != PTL_EVENT_LINK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("Event type does not match");
+    return GASPI_ERROR;
+  }
+
+  if(event.ni_fail_type != PTL_NI_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("Linking of LE failed");
+    return GASPI_ERROR;
+  }
   // Allocate CT Event queues
   for(int i = 0; i < gctx->num_queues; ++i)
   {

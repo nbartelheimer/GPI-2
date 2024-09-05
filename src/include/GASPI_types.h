@@ -60,6 +60,12 @@ static const gaspi_group_t GASPI_GROUP_ALL = 0;
 static const gaspi_timeout_t GASPI_BLOCK = 0xffffffffffffffff;
 static const gaspi_timeout_t GASPI_TEST = 0x0;
 
+/* Notification Type */
+typedef struct {
+	gaspi_segment_id_t segment_id;
+	gaspi_size_t changed_bytes;
+} gaspi_notification_object_t;
+
 /**
  * Functions return type.
  *
