@@ -430,8 +430,8 @@ gaspi_sn_recv_topology (gaspi_context_t * const gctx,
 {
   const int port_to_wait =
     gctx->config->sn_port + GASPI_MAX_PPN + gctx->local_rank;
-  int nsock = _gaspi_sn_wait_connection (port_to_wait, timeout_ms);
 
+  int nsock = _gaspi_sn_wait_connection (port_to_wait, timeout_ms);
   if (nsock < 0)
   {
     return nsock;
