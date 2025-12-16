@@ -398,8 +398,7 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
   /* Delete extra queues created */
   if (gctx->num_queues != gctx->config->queue_num)
   {
-//    for (gaspi_uint q = gctx->config->queue_num; q < gctx->num_queues; q++)
-    for (gaspi_uint q = gctx->num_queues; q > gctx->config->queue_num; q--)
+    for (gaspi_uint q = gctx->config->queue_num; q < gctx->num_queues; q++)
     {
       if (pgaspi_dev_comm_queue_delete (gctx, q) != 0)
       {
