@@ -30,7 +30,7 @@ usage()
     echo
     echo "Usage: gaspi_cleanup -m <machinefile>"
     echo "OR"
-    echo "gaspi_cleanup --machinefile <machinefile"
+    echo "gaspi_cleanup --machinefile <machinefile>"
     echo
     echo "Other options:"
     echo "   -c, --check       Only check if GASPI program is running on hosts."
@@ -46,9 +46,9 @@ validate_machinefile()
         exit 1
     fi
 
-    #valid hosts
-    hlist=$(cat "$1")
-    for i in $hlist
+    GASPI_HOSTS=$(uniq "$1")
+
+    for i in $GASPI_HOSTS
     do
         if ! ping -c 1 "$i" > /dev/null 2>&1 ; then
            echo "Host not reachable ($i)"
@@ -59,7 +59,7 @@ validate_machinefile()
 kill_procs()
 {
     GASPI_PRG=$(basename "$1")
-    GASPI_HOSTS=$(/bin/cat "$2")
+    GASPI_HOSTS=$(uniq "$2")
 
     for i in $GASPI_HOSTS
     do
@@ -71,7 +71,7 @@ kill_procs()
 check_gaspi_procs()
 {
     GASPI_PRG=$(basename "$1")
-    GASPI_HOSTS=$(/bin/cat "$2")
+    GASPI_HOSTS=$(uniq "$2")
 
     for i in $GASPI_HOSTS
     do
@@ -83,7 +83,7 @@ check_gaspi_procs()
 
 #at least we need machinefile
 if [ $# -lt 2 ]; then
-    usage
+    echo "Error: You need to provide a machinefile (-m option). Use -h or --help to view options."
     exit 1
 fi
 
@@ -93,11 +93,11 @@ if [ "$PRG" = "" ]; then
     exit 1
 fi
 
+check_only_option=0
 while [ "$1" != "" ]; do
     case $1 in
         -c | --check)
-            check_gaspi_procs $PRG $MFILE
-            exit 0
+            check_only_option=1
             ;;
 	-h | --help)
 	    usage
@@ -108,19 +108,27 @@ while [ "$1" != "" ]; do
             if [ -r "$1" ]; then
                 MFILE=$1
             else
-                echo "Error: Cannot read $1 (-m option) (or file does not exist)"
+                echo "Error: Cannot read file $1 (-m option) (or file does not exist)"
                 exit 1
             fi
             ;;
+        -* | --*)
+            echo "Error: Unknown option $1. Use -h or --help for help."
+            exit 1
+            ;;
         *)
-            usage
+            echo "Error: Unknown option $1. Use -h or --help for help."
+            exit 1
             ;;
     esac
     shift
 done
 
-validate_machinefile "$MFILE"
-
-kill_procs "$PRG" "$MFILE"
+if [ $check_only_option = 1 ]; then
+    check_gaspi_procs $PRG $MFILE
+else
+    validate_machinefile "$MFILE"
+    kill_procs "$PRG" "$MFILE"
+fi
 
 exit 0
