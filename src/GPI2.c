@@ -38,6 +38,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_SEG.h"
 #include "GPI2_SN.h"
 #include "GPI2_Sys.h"
+#include "GPI2_Topology.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
 #include "GPI2_VERSION.h"
@@ -221,70 +222,9 @@ pgaspi_parse_machinefile (gaspi_context_t * const gctx)
     return -1;
   }
 
-  //read hostnames
-  char *line = NULL;
-  size_t len = 0;
-  int lsize;
+  gctx->topology = gpi2_topology_from_file (gctx->mfile, gctx->tnc);
 
-  FILE *fp = fopen (gctx->mfile, "r");
-
-  if (fp == NULL)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to open machinefile");
-    return -1;
-  }
-
-  free (gctx->hn_poff);
-
-  gctx->hn_poff = (char *) calloc (gctx->tnc, 65);
-  if (gctx->hn_poff == NULL)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory");
-    fclose (fp);
-    return -1;
-  }
-
-  gctx->poff = gctx->hn_poff + gctx->tnc * 64;
-
-  int id = 0;
-
-  while ((lsize = getline (&line, &len, fp)) != -1)
-  {
-    //we assume a single hostname per line
-    if ((lsize < 2) || (lsize >= 64))
-      continue;
-
-    int inList = 0;
-
-    for (int i = 0; i < id; i++)
-    {
-      //already in list ?
-      const int hnlen =
-        MAX (strlen (gctx->hn_poff + i * 64), MIN (strlen (line) - 1, 63));
-      if (strncmp (gctx->hn_poff + i * 64, line, hnlen) == 0)
-      {
-        inList++;
-      }
-    }
-
-    if (inList >= GASPI_MAX_PPN)
-    {
-      GASPI_DEBUG_PRINT_ERROR
-        ("Too many entries for single host in machinefile (max %d)",
-         GASPI_MAX_PPN);
-      return -1;
-    }
-
-    gctx->poff[id] = inList;
-
-    strncpy (gctx->hn_poff + id * 64, line, MIN (lsize - 1, 63));
-    id++;
-  }
-
-  fclose (fp);
-  free (line);
-
-  return 0;
+  return gctx->topology == NULL;
 }
 
 #pragma weak gaspi_proc_init = pgaspi_proc_init
@@ -523,9 +463,6 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
     return GASPI_ERR_DEVICE;
   }
 
-  free (gctx->hn_poff);
-  gctx->hn_poff = NULL;
-
   //  free (gctx->ep_conn);
   gctx->ep_conn = NULL;
 
@@ -709,12 +646,9 @@ pgaspi_proc_local_num (gaspi_rank_t * const local_num)
     return GASPI_ERROR;
   }
 
-  while (gctx->poff[rank + 1] != 0 && (rank < gctx->tnc - 1))
-  {
-    rank++;
-  }
+  uint32_t my_host = gctx->topology->hosts_ids[rank];
 
-  *local_num = (gaspi_rank_t) (gctx->poff[rank] + 1);
+  *local_num = (gaspi_rank_t) (gctx->topology->count_per_host[my_host]);
 
   return GASPI_SUCCESS;
 }

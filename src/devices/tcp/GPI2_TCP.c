@@ -54,7 +54,7 @@ pgaspi_dev_connect_context (gaspi_context_t const *const gctx,
 {
   return tcp_dev_connect_to (i, pgaspi_gethostname (i),
                              gctx->config->dev_config.params.tcp.port +
-                             gctx->poff[i]);
+                             gctx->topology->local_ids[i]);
 }
 
 int

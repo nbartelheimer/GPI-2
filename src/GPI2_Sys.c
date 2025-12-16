@@ -255,13 +255,15 @@ pgaspi_gethostname (const unsigned int id)
   //TODO: ctx as arg
   gaspi_context_t const *const gctx = &glb_gaspi_ctx;
 
-  return gctx->hn_poff + id * 64;
+  return gctx->topology->hosts[id];
 }
 
 int
 pgaspi_ranks_are_local (gaspi_rank_t a, gaspi_rank_t b)
 {
-  return strcmp (pgaspi_gethostname (a), pgaspi_gethostname (b)) == 0;
+  gaspi_context_t const *const gctx = &glb_gaspi_ctx;
+
+  return gctx->topology->hosts_ids[a] == gctx->topology->hosts_ids[b];
 }
 
 void gaspi_delay (void)

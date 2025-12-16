@@ -456,23 +456,23 @@ gaspi_sn_recv_topology (gaspi_context_t * const gctx,
     GASPI_DEBUG_PRINT_ERROR ("Received unexpected topology data.");
   }
 
-  gctx->hn_poff = (char *) calloc (gctx->tnc, 65);
-  if (gctx->hn_poff == NULL)
+  /* Read the topology */
+  char* buffer = (char*) malloc (cdh.op_len);
+  if (!buffer)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
     close (nsock);
     return GPI2_SN_ERROR;
   }
 
-  gctx->poff = gctx->hn_poff + gctx->tnc * 64;
-
-  /* Read the topology */
-  if (gaspi_sn_readn (nsock, gctx->hn_poff, gctx->tnc * 65) != gctx->tnc * 65)
+  if (gaspi_sn_readn (nsock, buffer, cdh.op_len) != cdh.op_len)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to read topology data.");
     close (nsock);
     return GPI2_SN_ERROR;
   }
+
+  gctx->topology = gpi2_topology_from_buffer (buffer, cdh.op_len, gctx->tnc);
 
   if (gaspi_sn_close (nsock) != 0)
   {
@@ -490,7 +490,7 @@ gaspi_sn_send_topology (gaspi_context_t * const gctx, const int i,
   if ((gctx->sockfd[i] = gaspi_sn_connect2port (pgaspi_gethostname (i),
                                                 (gctx->config->sn_port +
                                                  GASPI_MAX_PPN +
-                                                 gctx->poff[i]),
+                                                 gctx->topology->local_ids[i]),
                                                 timeout_ms)) < 0)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to connect to %d", i);
@@ -508,7 +508,7 @@ gaspi_sn_send_topology (gaspi_context_t * const gctx, const int i,
 
   memset (&cdh, 0, sizeof (gaspi_cd_header));
 
-  cdh.op_len = gctx->tnc * 65;  //TODO: 65 is magic
+  cdh.op_len = gctx->topology->buffer_size;
   cdh.op = GASPI_SN_TOPOLOGY;
   cdh.rank = i;
   cdh.tnc = gctx->tnc;
@@ -533,8 +533,8 @@ gaspi_sn_send_topology (gaspi_context_t * const gctx, const int i,
   }
 
   /* the de facto topology */
-  ptr = gctx->hn_poff;
-  len = gctx->tnc * 65;
+  ptr = gctx->topology->buffer;
+  len = gctx->topology->buffer_size;
 
   if (gaspi_sn_writen (sockfd, ptr, len) != len)
   {
@@ -685,7 +685,8 @@ gaspi_sn_connect_to_rank (const gaspi_rank_t rank,
   {
     gctx->sockfd[rank] = gaspi_sn_connect2port (pgaspi_gethostname (rank),
                                                 gctx->config->sn_port +
-                                                gctx->poff[rank], timeout_ms);
+                                                gctx->topology->local_ids[rank],
+                                                timeout_ms);
 
     if (-2 == gctx->sockfd[rank])
     {
@@ -839,8 +840,8 @@ gaspi_sn_allgather (gaspi_context_t const *const gctx,
     (grp_ctx->rank + grp_ctx->tnc + 1) % grp_ctx->tnc;
   const int right_rank = grp_ctx->rank_grp[right_rank_in_group];
 
-  const int right_rank_port_offset = gctx->poff[right_rank];
-  const int my_rank_port_offset = gctx->poff[gctx->rank];
+  const int right_rank_port_offset = gctx->topology->local_ids[right_rank];
+  const int my_rank_port_offset = gctx->topology->local_ids[gctx->rank];
 
  /* TODO: fixed port numbers */
   const int port_to_wait = 23333 + my_rank_port_offset;
