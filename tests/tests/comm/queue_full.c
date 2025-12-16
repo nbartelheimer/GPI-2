@@ -36,6 +36,13 @@ int main(int argc, char *argv[])
                                 0, remOff, size,
                                 (gaspi_notification_id_t) myrank, 1,
                                 1, GASPI_BLOCK));
+
+    gaspi_queue_size (1, &queueSize);
+    if (queueSize >= qmax)
+    {
+      break;
+    }
+
     counter++;
   }
   while (counter < qmax);
@@ -60,6 +67,12 @@ int main(int argc, char *argv[])
     ASSERT(gaspi_write (0, localOff, rankSend,
                         0, remOff, size,
                         1, GASPI_BLOCK));
+
+    gaspi_queue_size (1, &queueSize);
+    if (queueSize >= qmax)
+    {
+      break;
+    }
 
     counter++;
   }
@@ -88,6 +101,13 @@ int main(int argc, char *argv[])
     ASSERT (gaspi_write (0, localOff, rankSend,
                          0, remOff, size,
                          1, GASPI_BLOCK));
+
+    gaspi_queue_size (1, &queueSize);
+    if (queueSize >= qmax)
+    {
+      break;
+    }
+
     counter++;
   }
   while (counter < qmax);
@@ -119,6 +139,13 @@ int main(int argc, char *argv[])
     ASSERT (gaspi_read (0, localOff, rankSend,
                         0, remOff, size,
                         1, GASPI_BLOCK));
+
+    gaspi_queue_size (1, &queueSize);
+    if (queueSize >= qmax)
+    {
+      break;
+    }
+
     counter++;
   }
   while (counter < qmax);
@@ -178,6 +205,12 @@ int main(int argc, char *argv[])
                                        remSegs, remOffs, sizes,
                                        0, myrank, 1,
                                        0, GASPI_BLOCK));
+      gaspi_queue_size (1, &queueSize);
+      if (queueSize >= qmax)
+      {
+        break;
+      }
+
       counter += nListElems;
     }
     while (counter + nListElems < qmax);
