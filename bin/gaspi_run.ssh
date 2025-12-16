@@ -254,7 +254,8 @@ while [ -n "$1" ]; do
 	    if [ -r "$2" ]; then
 		GPI2_MFILE=$2
 	    else
-		print_error_exit_failure "Cannot read file $2 (-m option) (or file does not exist)"
+		echo "Cannot read file $2 (-m option) (or file does not exist)"
+                clean_exit 0
 	    fi
 	    shift
 	    ;;
