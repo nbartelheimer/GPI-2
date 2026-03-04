@@ -487,7 +487,7 @@ static int
 gaspi_sn_send_topology (gaspi_context_t * const gctx, const int i,
                         const gaspi_timeout_t timeout_ms)
 {
-  if ((gctx->sockfd[i] = gaspi_sn_connect2port (pgaspi_gethostname (i),
+  if ((gctx->sockfd[i] = gaspi_sn_connect2port (pgaspi_gethostname (gctx, i),
                                                 (gctx->config->sn_port +
                                                  GASPI_MAX_PPN +
                                                  gctx->topology->local_ids[i]),
@@ -673,7 +673,7 @@ gaspi_sn_connect_to_rank (const gaspi_rank_t rank,
   clock_gettime (CLOCK_MONOTONIC_RAW, &t0);
 
 #ifdef DEBUG
-  if (strcmp (pgaspi_gethostname (rank), "") == 0)
+  if (strcmp (pgaspi_gethostname (gctx, rank), "") == 0)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to obtain hostname for rank %u", rank);
     return GASPI_ERROR;
@@ -683,7 +683,7 @@ gaspi_sn_connect_to_rank (const gaspi_rank_t rank,
   /* TODO: introduce backoff delay? */
   while (gctx->sockfd[rank] == -1)
   {
-    gctx->sockfd[rank] = gaspi_sn_connect2port (pgaspi_gethostname (rank),
+    gctx->sockfd[rank] = gaspi_sn_connect2port (pgaspi_gethostname (gctx, rank),
                                                 gctx->config->sn_port +
                                                 gctx->topology->local_ids[rank],
                                                 timeout_ms);
@@ -860,7 +860,7 @@ gaspi_sn_allgather (gaspi_context_t const *const gctx,
       return GPI2_SN_ERROR;
     }
 
-    right_sock = gaspi_sn_connect2port (pgaspi_gethostname (right_rank),
+    right_sock = gaspi_sn_connect2port (pgaspi_gethostname (gctx, right_rank),
                                         port_to_connect, timeout_ms);
     if (right_sock < 0)
     {
@@ -873,7 +873,8 @@ gaspi_sn_allgather (gaspi_context_t const *const gctx,
   else
   {
     right_sock =
-      gaspi_sn_connect2port (pgaspi_gethostname (right_rank), port_to_connect,
+      gaspi_sn_connect2port (pgaspi_gethostname (gctx, right_rank),
+                             port_to_connect,
                              timeout_ms);
     if (right_sock < 0)
     {

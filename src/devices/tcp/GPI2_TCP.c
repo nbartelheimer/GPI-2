@@ -52,7 +52,7 @@ int
 pgaspi_dev_connect_context (gaspi_context_t const *const gctx,
                             const int i)
 {
-  return tcp_dev_connect_to (i, pgaspi_gethostname (i),
+  return tcp_dev_connect_to (i, pgaspi_gethostname (gctx, i),
                              gctx->config->dev_config.params.tcp.port +
                              gctx->topology->local_ids[i]);
 }
@@ -129,9 +129,9 @@ static void
 pgaspi_tcp_dev_print_info (gaspi_context_t const *const gctx)
 {
   printf ("<<<<<<<<<<<<<<<< TCP-info >>>>>>>>>>>>>>>>>>>\n");
-  printf ("  Hostname: %s\n", pgaspi_gethostname (gctx->rank));
+  printf ("  Hostname: %s\n", pgaspi_gethostname (gctx, gctx->rank));
 
-  char *ip = tcp_dev_get_local_ip (pgaspi_gethostname (gctx->rank));
+  char *ip = tcp_dev_get_local_ip (pgaspi_gethostname (gctx, gctx->rank));
 
   if (ip != NULL)
   {

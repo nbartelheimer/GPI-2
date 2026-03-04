@@ -21,6 +21,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 
 #include <sched.h>
 
+#include "GPI2_Types.h"
 #include "GASPI_types.h"
 
 #if defined(__x86_64__)
@@ -67,8 +68,10 @@ float gaspi_get_cpufreq (void);
 
 int gaspi_get_affinity_mask (const int sock, cpu_set_t * cpuset);
 
-char *pgaspi_gethostname (const unsigned int id);
+char* pgaspi_gethostname (gaspi_context_t const *const gctx,
+                          const unsigned int id);
 
-int pgaspi_ranks_are_local (gaspi_rank_t a, gaspi_rank_t b);
+int pgaspi_ranks_are_local (gaspi_context_t const *const gctx,
+                            gaspi_rank_t a, gaspi_rank_t b);
 
 #endif //GPI2_SYS
