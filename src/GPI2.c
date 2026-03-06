@@ -125,7 +125,8 @@ pgaspi_create_error_vector (gaspi_context_t * gctx)
       //rollback and release memory
       for (int j = i - 1; j >= 0; --j)
       {
-        free (gctx->state_vec[i]);
+        free (gctx->state_vec[j]);
+        gctx->state_vec[j] = NULL;
       }
 
       return GASPI_ERR_MEMALLOC;
@@ -234,14 +235,15 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
   gaspi_return_t eret = GASPI_ERROR;
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
 
-  if (gctx->init)
-  {
-    return GASPI_ERR_INITED;
-  }
-
   if (lock_gaspi_tout (&(gctx->ctx_lock), timeout_ms))
   {
     return GASPI_TIMEOUT;
+  }
+
+  if (gctx->init)
+  {
+    unlock_gaspi (&(gctx->ctx_lock));
+    return GASPI_ERR_INITED;
   }
 
   gctx->config = &glb_gaspi_cfg;
@@ -326,6 +328,7 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     if (eret != GASPI_SUCCESS)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to create GASPI_GROUP_ALL.");
+      return eret;
     }
 
     /* configuration tells us to pre-connect */
@@ -403,7 +406,7 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
       if (pgaspi_dev_comm_queue_delete (gctx, q) != 0)
       {
         GASPI_DEBUG_PRINT_ERROR ("Failed to destroy queue.");
-        return -1;
+        return GASPI_ERR_DEVICE;
       }
     }
   }
@@ -412,7 +415,7 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
   if (pgaspi_dev_unregister_mem (gctx, &(gctx->nsrc)) != 0)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to de-register internal memory");
-    return -1;
+    return GASPI_ERR_DEVICE;
   }
 
   free (gctx->nsrc.notif_spc.buf);
@@ -438,6 +441,15 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
   }
   free (gctx->rrmd);
 
+  if (gctx->topology != NULL)
+  {
+    gpi2_topology_free (gctx->topology);
+    gctx->topology = NULL;
+  }
+
+  /* Release ctx_lock for group deletion (which acquires its own locks)
+   * and re-acquire before device cleanup. The caller (pgaspi_proc_term)
+   * expects ctx_lock to be held on return. */
   unlock_gaspi (&(gctx->ctx_lock));
 
   /* Delete groups */
@@ -462,7 +474,7 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
     return GASPI_ERR_DEVICE;
   }
 
-  //  free (gctx->ep_conn);
+  free (gctx->ep_conn);
   gctx->ep_conn = NULL;
 
   for (int i = 0; i < GASPI_MAX_QP + 3; i++)
@@ -495,9 +507,9 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
   {
     for (int i = 0; i < gctx->tnc; i++)
     {
-      shutdown (gctx->sockfd[i], 2);
       if (gctx->sockfd[i] > 0)
       {
+        shutdown (gctx->sockfd[i], SHUT_RDWR);
         close (gctx->sockfd[i]);
       }
     }
@@ -687,6 +699,10 @@ pgaspi_time_get (gaspi_time_t * const wtime)
   if (!(gctx->init))
   {
     const float cpu_mhz = gaspi_get_cpufreq();
+    if (cpu_mhz == 0.0f)
+    {
+      return GASPI_ERROR;
+    }
 
     cycles_to_msecs = 1.0f / (cpu_mhz * 1000.0f);
   }
