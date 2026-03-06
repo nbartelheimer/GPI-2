@@ -215,6 +215,7 @@ spawn_procs_on_hosts()
     local rank=0;
     local node=0;
     local master_node=$(head -n 1 $mfile)
+    local local_hostname=$(hostname)
 
     uniq -c "$mfile" | while read -r count host; do
 	cmd="${GPI2_LAUNCHER_SPAWNER} ${master_node}"
@@ -228,7 +229,11 @@ spawn_procs_on_hosts()
 	cmd="$cmd $GPI2_SET_NUMA"
 	cmd="$cmd ${prg} ${prg_args}"
 
-	$GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd $(cat /dev/null) 2>&1" &
+	if [ "$host" = "$local_hostname" ]; then
+	    GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd > /dev/null 2>&1 &
+	else
+	    $GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd $(cat /dev/null) 2>&1" &
+	fi
 
 	rank=$((rank+count))
 	node=$((node+1))
