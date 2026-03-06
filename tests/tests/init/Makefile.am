@@ -10,7 +10,8 @@ init_tests = ../../bin/proc_init_timeout.bin \
 	../../bin/strong_sym.bin \
 	../../bin/local_rank.bin \
 	../../bin/initialized.bin \
-	../../bin/hello_world.bin
+	../../bin/hello_world.bin \
+	../../bin/proc_init_mt.bin
 
 ______bin_proc_init_timeout_bin_SOURCES = proc_init_timeout.c $(auxSRCS)
 ______bin_cmd_line_args_bin_SOURCES = cmd_line_args.c $(auxSRCS)
@@ -22,5 +23,6 @@ ______bin_strong_sym_bin_SOURCES = strong_sym.c $(auxSRCS)
 ______bin_local_rank_bin_SOURCES = local_rank.c $(auxSRCS)
 ______bin_initialized_bin_SOURCES = initialized.c $(auxSRCS)
 ______bin_hello_world_bin_SOURCES = hello_world.c $(auxSRCS)
+______bin_proc_init_mt_bin_SOURCES = proc_init_mt.c $(auxSRCS)
 
 test_pkglibexec_PROGRAMS = $(init_tests)

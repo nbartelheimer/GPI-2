@@ -1,0 +1,6 @@
+#!/bin/bash
+# Mock ssh.spawner: logs invocation and exits
+# The real spawner sets up env and launches the binary on worker nodes.
+# We just record what was called.
+
+echo "MOCK_SPAWNER args=$*" >> "$MOCK_LOG"

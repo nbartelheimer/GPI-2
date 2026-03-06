@@ -1,0 +1,8 @@
+#!/bin/bash
+# Mock numactl: returns fake NUMA hardware info
+
+if [ "$1" = "--hardware" ]; then
+    echo "available: 2 nodes (0-1)"
+    echo "node 0 cpus: 0 1 2 3"
+    echo "node 1 cpus: 4 5 6 7"
+fi

@@ -1,0 +1,12 @@
+#!/bin/bash
+# Mock ssh: logs invocation and executes the command locally
+# Usage matches: ssh <host> <command>
+
+host="$1"
+shift
+cmd="$*"
+
+echo "MOCK_SSH host=$host cmd=$cmd" >> "$MOCK_LOG"
+
+# Execute the command locally so we can capture program output
+eval "$cmd"
