@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Copyright (c) Fraunhofer ITWM, 2013-2025
 
@@ -29,7 +29,7 @@ GPI2_MFILE=""
 GPI2_NNODES=0
 GPI2_PING_HOSTNAMES_OPTION=0
 GPI2_PRG=""
-GPI2_PRG_ARGS=""
+GPI2_PRG_ARGS=()
 GPI2_SET_NUMA=0
 GPI2_USE_DEBUGGER=0
 
@@ -202,10 +202,14 @@ validate_machinefile()
 # spawn_procs_on_hosts <machinefile> <number of ranks> <program to spawn> <program options>
 spawn_procs_on_hosts()
 {
-    local mfile=$1
-    local numranks=$2
-    local prg=$3
-    local prg_args=$4
+    local mfile="$1"
+    local numranks="$2"
+    local prg="$3"
+    shift 3
+    local prg_args=""
+    if [ $# -gt 0 ]; then
+	prg_args=$(printf '%q ' "$@")
+    fi
 
     local rank=0;
     local node=0;
@@ -307,7 +311,7 @@ while [ -n "$1" ]; do
 		if [ -x "$FULLPATH" ]; then
 		    GPI2_PRG="$FULLPATH"
 		    shift
-		    GPI2_PRG_ARGS="$*"
+		    GPI2_PRG_ARGS=("$@")
 		    break
 		else
 		    print_error_exit_failure "Cannot execute $1 (or file does not exist)"
@@ -354,7 +358,7 @@ if [ -O /tmp/.last_gaspi_prg ]; then
 fi
 
 #spawn processes (other than master/rank 0)
-spawn_procs_on_hosts $GPI2_MFILE $GPI2_NNODES $GPI2_PRG $GPI2_PRG_ARGS
+spawn_procs_on_hosts "$GPI2_MFILE" "$GPI2_NNODES" "$GPI2_PRG" "${GPI2_PRG_ARGS[@]}"
 
 
 #start rank 0
@@ -398,7 +402,11 @@ if [ "$first_hostname" != "$hn" ]; then
 #	cmd="$cmd; export GASPI_SET_NUMA_SOCKET=1"
     #    fi
 
-    cmd="$master_env; $GPI2_MASTER_PRG $GPI2_PRG_ARGS"
+    local escaped_args=""
+    if [ ${#GPI2_PRG_ARGS[@]} -gt 0 ]; then
+	escaped_args=$(printf '%q ' "${GPI2_PRG_ARGS[@]}")
+    fi
+    cmd="$master_env; $GPI2_MASTER_PRG $escaped_args"
 
     if ! $GPI2_LAUNCHER "$first_hostname" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") eval $cmd" ; then
 	echo "Error: Failed to start $GPI2_MASTER_PRG on $first_hostname"
@@ -418,9 +426,9 @@ else
     eval $master_env
 
     if [ $GPI2_USE_DEBUGGER != 0 ]; then
-	gdb --args "$GPI2_MASTER_PRG" "$GPI2_PRG_ARGS"
+	gdb --args "$GPI2_MASTER_PRG" "${GPI2_PRG_ARGS[@]}"
     else
-	$GPI2_MASTER_PRG "$GPI2_PRG_ARGS"
+	"$GPI2_MASTER_PRG" "${GPI2_PRG_ARGS[@]}"
     fi
     if [ $? != 0 ]; then
 	clean_exit 1
