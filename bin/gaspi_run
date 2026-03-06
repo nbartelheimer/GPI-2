@@ -61,7 +61,8 @@ usage()
 kill_procs_in_all_hosts()
 {
     if [ ! -r "$GPI2_MFILE" ]; then
-	print_error_exit_failure "Failed to read machine file ($GPI2_MFILE) when trying to kill procs."
+	echo "Warning: Cannot read machine file ($GPI2_MFILE). Remote processes may still be running."
+	return
     fi
 
     local uniq_mfile=$(uniq "$GPI2_MFILE")
@@ -248,7 +249,7 @@ if [ ! -x "${GPI2_LAUNCHER_SPAWNER}" ]; then
     echo
     echo "The required spawner (ssh) is missing (or not executable)"
     echo
-    clean_exit 0
+    clean_exit 1
 fi
 
 #command line parsing
@@ -258,8 +259,7 @@ while [ -n "$1" ]; do
 	    if [ -r "$2" ]; then
 		GPI2_MFILE=$2
 	    else
-		echo "Cannot read file $2 (-m option) (or file does not exist)"
-                clean_exit 0
+		print_error_exit_failure "Cannot read file $2 (-m option) (or file does not exist)"
 	    fi
 	    shift
 	    ;;
@@ -340,7 +340,7 @@ trap kill_procs_trap TERM INT QUIT
 
 #use all hosts in machine file
 if [ "$GPI2_NNODES" -eq 0 ]; then
-    GPI2_NNODES=$(wc -l "$GPI2_MFILE" |cut -d' ' -f1)
+    GPI2_NNODES=$(wc -l < "$GPI2_MFILE")
 fi
 
 validate_machinefile "$GPI2_MFILE" "$GPI2_NNODES"
@@ -390,18 +390,6 @@ if [ "$first_hostname" != "$hn" ]; then
 	echo "Warning: Failed to copy machinefile to remote host. Program might not start correctly."
     fi
 
-    #prepare command to execute remotely
-    cmd="/bin/sh -c '${master_env}'"
-#    cmd="$cmd export GASPI_MASTER=$first_hostname"
-#    cmd="$cmd; export GASPI_SOCKET=0"
-#    cmd="$cmd; export GASPI_MFILE=$GPI2_MFILE"
-#    cmd="$cmd; export GASPI_RANK=0"
-#    cmd="$cmd; export GASPI_NRANKS=$GPI2_NNODES"
-
-#    if [ $GPI2_SET_NUMA -eq 1 ]; then
-#	cmd="$cmd; export GASPI_SET_NUMA_SOCKET=1"
-    #    fi
-
     local escaped_args=""
     if [ ${#GPI2_PRG_ARGS[@]} -gt 0 ]; then
 	escaped_args=$(printf '%q ' "${GPI2_PRG_ARGS[@]}")
@@ -413,16 +401,6 @@ if [ "$first_hostname" != "$hn" ]; then
 	clean_exit 1
     fi
 else
-    # export GASPI_MASTER="$hn"
-
-    # if [ $GPI2_SET_NUMA -eq 1 ]; then
-    #	export GASPI_SET_NUMA_SOCKET=1
-    # fi
-    # export GASPI_SOCKET=0
-    # export GASPI_MFILE="$GPI2_MFILE"
-    # export GASPI_RANK=0
-    # export GASPI_NRANKS="$GPI2_NNODES"
-
     eval $master_env
 
     if [ $GPI2_USE_DEBUGGER != 0 ]; then
