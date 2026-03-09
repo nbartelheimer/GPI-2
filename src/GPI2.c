@@ -62,6 +62,10 @@ pgaspi_version (float *const version)
 gaspi_return_t
 pgaspi_set_socket_affinity (const gaspi_uchar sock)
 {
+#ifdef __riscv
+  GASPI_PRINT_WARNING ("NUMA affinity setting not yet supported on RISC-V.");
+  return GASPI_SUCCESS;
+#else
   cpu_set_t sock_mask;
 
   if (sock >= GASPI_MAX_NUMAS)
@@ -88,6 +92,7 @@ pgaspi_set_socket_affinity (const gaspi_uchar sock)
   }
 
   return GASPI_SUCCESS;
+#endif
 }
 
 #pragma weak gaspi_numa_socket = pgaspi_numa_socket
@@ -256,6 +261,7 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
   {
     //timing
     gctx->mhz = gaspi_get_cpufreq();
+#ifndef __riscv
     if (gctx->mhz == 0.0f)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to get CPU frequency");
@@ -263,6 +269,7 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     }
 
     gctx->cycles_to_msecs = 1.0f / (gctx->mhz * 1000.0f);
+#endif
 
     if (gaspi_handle_env (gctx))
     {

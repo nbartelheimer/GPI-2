@@ -33,6 +33,9 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 
 #elif defined (__PPC64__)
 #define GASPI_DELAY() __asm__ volatile("ori 0,0,0" ::: "memory");
+
+#elif defined (__riscv)
+#define GASPI_DELAY() __asm__ volatile("nop")
 #endif
 
 static inline gaspi_cycles_t
@@ -61,6 +64,14 @@ gaspi_get_cycles (void)
   asm volatile ("mftb %0" : "=r" (cycles) : );
   return cycles;
 
+#elif defined (__riscv)
+
+  unsigned long long cycles;
+  asm volatile ("rdcycle %0" : "=r" (cycles));
+  return cycles;
+
+#else
+#error "gaspi_get_cycles: unsupported architecture"
 #endif
 }
 
