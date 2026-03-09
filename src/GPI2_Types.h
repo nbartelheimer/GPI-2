@@ -156,6 +156,7 @@ typedef struct
 
   /* Number of "created" communication queues */
   gaspi_number_t num_queues;
+  gaspi_state_t state_vec_queue[GASPI_MAX_QP];
 
   /* Comm counters  */
   gaspi_uint ne_count_grp;

@@ -218,6 +218,9 @@ pgaspi_queue_create (gaspi_queue_id_t * const queue_id,
     }
   }
 
+  /* Set state of the queue */
+  gctx->state_vec_queue[*queue_id] = GASPI_STATE_HEALTHY;
+
   /* Increment queue counter */
   __sync_fetch_and_add (&(gctx->num_queues), 1);
 
@@ -243,6 +246,9 @@ pgaspi_queue_delete (const gaspi_queue_id_t queue_id)
     unlock_gaspi (&(gctx->ctx_lock));
     return GASPI_ERR_DEVICE;
   }
+
+  /* Mark queue as unavailable (using GASPI_STATE_CORRUPT per spec) */
+  gctx->state_vec_queue[queue_id] = GASPI_STATE_CORRUPT;
 
   /* Decrement queue counter */
   __sync_fetch_and_sub (&(gctx->num_queues), 1);

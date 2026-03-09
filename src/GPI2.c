@@ -165,6 +165,10 @@ pgaspi_init_core (gaspi_context_t * const gctx)
 
   /* Set number of "created" communication queues */
   gctx->num_queues = gctx->config->queue_num;
+  for (gaspi_number_t i = 0; i < gctx->num_queues; i++)
+  {
+    gctx->state_vec_queue[i] = GASPI_STATE_HEALTHY;
+  }
 
   gctx->ep_conn =
     (gaspi_endpoint_conn_t *) calloc (gctx->tnc,
