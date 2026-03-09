@@ -26,6 +26,16 @@ AM_FCFLAGS += -DGPI2_WITH_MPI
 endif
 endif
 
+if ENABLE_ASAN
+LDFLAGS += -fno-omit-frame-pointer -fsanitize=address
+endif
+if ENABLE_TSAN
+LDFLAGS += -fno-omit-frame-pointer -fsanitize=thread
+endif
+if ENABLE_UBSAN
+LDFLAGS += -fno-omit-frame-pointer -fsanitize=undefined
+endif
+
 AM_CXXFLAGS = $(AM_CFLAGS) $(AM_CPPFLAGS)
 
 # aux TESTS

@@ -79,6 +79,15 @@ lib_LTLIBRARIES += libGPI2-dbg.la
 libGPI2_dbg_la_SOURCES = $(SRCS)
 libGPI2_dbg_la_CFLAGS = $(lib_default_cflags) -g -O0 -DDEBUG
 libGPI2_dbg_la_CPPFLAGS = $(default_includes)
+if ENABLE_ASAN
+libGPI2_dbg_la_CFLAGS += -fno-omit-frame-pointer -fsanitize=address
+endif
+if ENABLE_TSAN
+libGPI2_dbg_la_CFLAGS += -fno-omit-frame-pointer -fsanitize=thread
+endif
+if ENABLE_UBSAN
+libGPI2_dbg_la_CFLAGS += -fno-omit-frame-pointer -fsanitize=undefined
+endif
 endif
 
 if ENABLE_STAT
