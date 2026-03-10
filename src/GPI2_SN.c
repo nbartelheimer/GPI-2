@@ -468,11 +468,19 @@ gaspi_sn_recv_topology (gaspi_context_t * const gctx,
   if (gaspi_sn_readn (nsock, buffer, cdh.op_len) != cdh.op_len)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to read topology data.");
+    free (buffer);
     close (nsock);
     return GPI2_SN_ERROR;
   }
 
   gctx->topology = gpi2_topology_from_buffer (buffer, cdh.op_len, gctx->tnc);
+  if (gctx->topology == NULL)
+  {
+    GASPI_DEBUG_PRINT_ERROR ("Failed to build topology from buffer.");
+    free (buffer);
+    close (nsock);
+    return GPI2_SN_ERROR;
+  }
 
   if (gaspi_sn_close (nsock) != 0)
   {

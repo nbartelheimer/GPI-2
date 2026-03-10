@@ -101,7 +101,10 @@ hosttable_destroy (hosttable_t *t)
     return;
   }
 
-  munmap (t->file_map, t->file_size);
+  if (t->file_map != NULL && t->file_map != MAP_FAILED)
+  {
+    munmap (t->file_map, t->file_size);
+  }
   free (t->hosts);
   free (t->local_ids);
   free (t->hosts_ids);
@@ -154,7 +157,7 @@ hosttable_create_mmap (const char *filepath, size_t n)
 
   if (t->hosts == NULL || t->local_ids == NULL || t->hosts_ids == NULL)
   {
-    free(t);
+    hosttable_destroy (t);
     return NULL;
   }
 
@@ -279,6 +282,7 @@ gpi2_topology_set_hosts_info (gpi2_topology_t* topo)
 void
 gpi2_topology_free (gpi2_topology_t* topo)
 {
+  free (topo->count_per_host);
   free (topo->hosts);
   free (topo->buffer);
   free (topo);
