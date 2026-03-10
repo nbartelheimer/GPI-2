@@ -15,7 +15,6 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 */
-#include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -280,15 +279,18 @@ gpi2_topology_free (gpi2_topology_t* topo)
 gpi2_topology_t*
 gpi2_topology_from_file (const char *filepath, size_t n)
 {
-  hosttable_t *t = hosttable_create_mmap (filepath , n);
-
-  gpi2_topology_t* topo = calloc (1, sizeof (gpi2_topology_t));
-  if (!topo)
+  hosttable_t *t = hosttable_create_mmap (filepath, n);
+  if (t == NULL)
   {
     return NULL;
   }
 
-  assert (t->n == n);
+  gpi2_topology_t* topo = calloc (1, sizeof (gpi2_topology_t));
+  if (!topo)
+  {
+    hosttable_destroy (t);
+    return NULL;
+  }
 
   /* Allocate buffer containing all info */
   size_t local_ids_size = t->n * sizeof (uint8_t);
