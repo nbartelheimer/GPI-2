@@ -374,7 +374,61 @@ will display the string "Hello 1" in the `gaspi_logger` started on rank
 1.
 
 
-## 6. TROUBLESHOOTING AND KNOWN ISSUES
+## 6. TRACING
+
+GPI-2 includes a built-in tracing facility for profiling GASPI
+operations. Tracing is activated at runtime via the `GASPI_TRACE`
+environment variable — no recompilation needed for lifecycle
+operations (init, segments, groups, collectives, passive).
+
+Data-path operations (read, write, notify, wait, atomics) are only
+traced when linked against `libGPI2-stats`, which includes full
+hot-path instrumentation.
+
+### Enabling tracing
+
+Using `gaspi_run`:
+
+```
+gaspi_run -m machinefile --trace my_app           # trace all categories
+gaspi_run -m machinefile --trace init,seg my_app  # trace only init and segments
+```
+
+Or directly via environment variable:
+
+```
+GASPI_TRACE=all gaspi_run -m machinefile my_app
+GASPI_TRACE=init,coll gaspi_run -m machinefile my_app
+```
+
+Available categories: `init`, `seg`, `io`, `coll`, `grp`, `atomic`,
+`passive`, `sn`. Use `all` or `1` to enable everything.
+
+### Trace output
+
+Each rank writes a binary trace file `gaspi_trace_rank<N>.bin` in
+the working directory. Use the `gpi2_trace_dump` tool to convert:
+
+```
+gpi2_trace_dump gaspi_trace_rank0.bin                  # human-readable text
+gpi2_trace_dump -f csv gaspi_trace_rank0.bin           # CSV
+gpi2_trace_dump -f json gaspi_trace_rank0.bin > t.json # Chrome Trace Format
+```
+
+Multiple files can be merged into a single output — events are
+sorted by timestamp and tagged with their rank:
+
+```
+gpi2_trace_dump gaspi_trace_rank*.bin                   # merged text
+gpi2_trace_dump -f json gaspi_trace_rank*.bin > all.json # merged JSON
+gpi2_trace_dump -r gaspi_trace_rank*.bin                # relative (each rank starts at t=0)
+```
+
+The JSON output can be visualized in `chrome://tracing` or
+[Perfetto UI](https://ui.perfetto.dev).
+
+
+## 7. TROUBLESHOOTING AND KNOWN ISSUES
 
 If there are troubles when building GPI-2 with support for Infiniband,
 make sure the OFED stack is correctly installed and running. As above

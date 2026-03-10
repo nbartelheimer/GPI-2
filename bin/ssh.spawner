@@ -61,6 +61,10 @@ do
         cmd="$cmd; export GASPI_SET_NUMA_SOCKET=1"
     fi
 
+    if [ -n "$GASPI_TRACE" ]; then
+        cmd="$cmd; export GASPI_TRACE=$GASPI_TRACE"
+    fi
+
     cmd="$cmd; $PROG ${ARGS}'"
     eval "$cmd" &
 

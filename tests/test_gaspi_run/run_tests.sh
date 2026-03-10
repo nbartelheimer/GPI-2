@@ -332,6 +332,68 @@ test_ping_option() {
 }
 
 ######################################################################
+# Category 3b: Tracing option (-t / --trace) (8 tests)
+######################################################################
+
+test_trace_default_master_local() {
+    # No category after -t -> defaults to "all"; master runs locally and
+    # must see GASPI_TRACE in its environment.
+    run_gaspi_run -t -m "$MF_LOCAL" "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_output_contains "GASPI_TRACE=all"
+}
+
+test_trace_explicit_categories_master_local() {
+    run_gaspi_run -t comm,io -m "$MF_LOCAL" "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_output_contains "GASPI_TRACE=comm,io"
+}
+
+test_trace_long_option() {
+    run_gaspi_run --trace io -m "$MF_LOCAL" "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_output_contains "GASPI_TRACE=io"
+}
+
+test_trace_absent_master_local() {
+    # Without -t the master process must NOT see GASPI_TRACE.
+    run_gaspi_run -m "$MF_LOCAL" "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_output_contains "GASPI_TRACE=<unset>"
+}
+
+test_trace_propagated_to_local_spawner() {
+    # Non-master ranks on the local host are launched via the spawner with
+    # GASPI_TRACE on their environment.
+    run_gaspi_run -t all -m "$MF_LOCAL" "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "MOCK_SPAWNER GASPI_TRACE=all"
+}
+
+test_trace_propagated_to_remote_master() {
+    # Remote master: GASPI_TRACE travels inside the command string handed to
+    # ssh, so the probe still reports it after the remote eval.
+    run_gaspi_run -t io -m "$MF_REMOTE" "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_output_contains "GASPI_TRACE=io"
+}
+
+test_trace_no_category_before_binary() {
+    # -t immediately before the binary path: the path is not a valid category
+    # list, so it must fall back to "all" without swallowing the binary.
+    run_gaspi_run -m "$MF_LOCAL" -t "$FIXTURE_DIR/trace_probe.sh"
+    assert_exit_code 0 &&
+    assert_output_contains "GASPI_TRACE=all" &&
+    assert_output_contains "argc=1"
+}
+
+test_trace_in_help() {
+    run_gaspi_run -h
+    assert_exit_code 0 &&
+    assert_output_contains "trace [categories]"
+}
+
+######################################################################
 # Category 4: Error cases (13 tests)
 ######################################################################
 
@@ -487,6 +549,18 @@ run_test test_debug_local
 run_test test_debug_remote_fails
 run_test test_numa_option
 run_test test_ping_option
+
+# Category 3b: Tracing option
+echo
+echo "--- Tracing option (-t / --trace) ---"
+run_test test_trace_default_master_local
+run_test test_trace_explicit_categories_master_local
+run_test test_trace_long_option
+run_test test_trace_absent_master_local
+run_test test_trace_propagated_to_local_spawner
+run_test test_trace_propagated_to_remote_master
+run_test test_trace_no_category_before_binary
+run_test test_trace_in_help
 
 # Category 4: Error cases
 echo

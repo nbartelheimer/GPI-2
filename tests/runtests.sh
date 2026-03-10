@@ -173,6 +173,17 @@ if [ $TESTS_GO_FAST = 0 ] && [ $(($# - $opts_used)) = 0 ]; then
         fi
         echo
     fi
+
+    GASPI_RUN_SLURM_TESTS="${RUNTESTS_DIR}/test_gaspi_run/run_slurm_tests.sh"
+    if [ -x "$GASPI_RUN_SLURM_TESTS" ]; then
+        echo
+        echo "Running gaspi_run.slurm unit tests..."
+        if ! "$GASPI_RUN_SLURM_TESTS"; then
+	    echo "gaspi_run.slurm unit tests failed. Aborting."
+	    exit 1
+        fi
+        echo
+    fi
 fi
 
 # Run gaspi_cleanup unit tests (only when running full test suite)

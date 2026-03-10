@@ -31,6 +31,7 @@ GPI2_PING_HOSTNAMES_OPTION=0
 GPI2_PRG=""
 GPI2_PRG_ARGS=()
 GPI2_SET_NUMA=0
+GPI2_TRACE=""
 GPI2_USE_DEBUGGER=0
 
 remove_temp_files()
@@ -52,6 +53,7 @@ usage()
     echo "  -n, --nodes  <procs>       Start as many <procs> from machine file."
     echo "  -d, --debug                Run with GDB (debugger) on master node."
     echo "  -p, --ping                 Ping hosts before starting binary."
+    echo "  -t, --trace [categories]   Enable tracing (default: all)."
     echo "  -h, --help                 This help."
     echo
 
@@ -230,9 +232,13 @@ spawn_procs_on_hosts()
 	      cmd="$cmd ${prg} ${prg_args}"
 
 	      if [ "$host" = "$local_hostname" ]; then
-	          GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd > /dev/null 2>&1 &
+	          GASPI_TRACE="$GPI2_TRACE" GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd > /dev/null 2>&1 &
 	      else
-	          $GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd $(cat /dev/null) 2>&1" &
+	          local trace_env=""
+	          if [ -n "$GPI2_TRACE" ]; then
+	              trace_env="GASPI_TRACE=$(printf '%q' "$GPI2_TRACE")"
+	          fi
+	          $GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") $trace_env nohup $cmd $(cat /dev/null) 2>&1" &
 	      fi
 
 	      rank=$((rank+count))
@@ -299,6 +305,14 @@ while [ -n "$1" ]; do
 	          ;;
 	      -p | --ping)
 	          GPI2_PING_HOSTNAMES_OPTION=1
+	          ;;
+	      -t | --trace)
+	          if [ -n "$2" ] && [[ "$2" =~ ^[a-z0-9,]+$ ]]; then
+	              GPI2_TRACE="$2"
+	              shift
+	          else
+	              GPI2_TRACE="all"
+	          fi
 	          ;;
 	      -* )
 	          print_error_exit_failure "Invalid option ($1). Use -h (or --help) for available options."
@@ -379,6 +393,11 @@ master_env=$(cat <<EOF
  export GASPI_NRANKS="$GPI2_NNODES"
 EOF
 	        )
+
+if [ -n "$GPI2_TRACE" ]; then
+    master_env="$master_env
+ export GASPI_TRACE=\"$GPI2_TRACE\""
+fi
 
 if [ "$first_hostname" != "$hn" ]; then
     if [ $GPI2_USE_DEBUGGER != 0 ]; then

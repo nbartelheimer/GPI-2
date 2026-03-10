@@ -42,6 +42,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
 #include "GPI2_VERSION.h"
+#include "GPI2_Trace.h"
 #include "PGASPI.h"
 
 extern gaspi_config_t glb_gaspi_cfg;
@@ -257,6 +258,11 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
 
   gctx->config = &glb_gaspi_cfg;
 
+  gpi2_trace_init (gctx->rank);
+  GPI2_TRACE_BEGIN (GPI2_EV_PROC_INIT);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_SN_SETUP);
+
   if (gctx->sn_init == 0)
   {
     //timing
@@ -288,6 +294,10 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     gctx->sn_init = 1;
   }
 
+  GPI2_TRACE_END (GPI2_EV_SN_SETUP);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_PARSE_MFILE);
+
   if (gctx->rank == 0 && gctx->dev_init == 0)
   {
     if (pgaspi_parse_machinefile (gctx) != 0)
@@ -297,6 +307,10 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     }
   }
 
+  GPI2_TRACE_END (GPI2_EV_PARSE_MFILE);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_BROADCAST_TOPO);
+
   eret = gaspi_sn_broadcast_topology (gctx, timeout_ms);
   if (eret != GASPI_SUCCESS)
   {
@@ -304,11 +318,17 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     goto errL;
   }
 
+  GPI2_TRACE_END (GPI2_EV_BROADCAST_TOPO);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_INIT_CORE);
+
   eret = pgaspi_init_core (gctx);
   if (eret != GASPI_SUCCESS)
   {
     goto errL;
   }
+
+  GPI2_TRACE_END (GPI2_EV_INIT_CORE);
 
   /* Unleash SN thread */
   __sync_fetch_and_add (&(gctx->master_topo_data), 1);
@@ -318,10 +338,14 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
   /* Wait for SN to initialize (locally) */
   enum gaspi_sn_status _sn_status;
 
+  GPI2_TRACE_BEGIN (GPI2_EV_SN_WAIT);
+
   while ((_sn_status = gaspi_sn_status_get()) == GASPI_SN_STATE_INIT)
   {
     GASPI_DELAY();
   }
+
+  GPI2_TRACE_END (GPI2_EV_SN_WAIT);
 
   if (_sn_status != GASPI_SN_STATE_OK)
   {
@@ -333,12 +357,16 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
 
   unlock_gaspi (&(gctx->ctx_lock));
 
+  GPI2_TRACE_BEGIN (GPI2_EV_BUILD_INFRA);
+
   if (gctx->config->build_infrastructure)
   {
     eret = pgaspi_group_all_local_create (gctx, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to create GASPI_GROUP_ALL.");
+      GPI2_TRACE_END (GPI2_EV_BUILD_INFRA);
+      GPI2_TRACE_END (GPI2_EV_PROC_INIT);
       return eret;
     }
 
@@ -352,6 +380,8 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
         if ((eret =
              pgaspi_connect ((gaspi_rank_t) i, timeout_ms)) != GASPI_SUCCESS)
         {
+          GPI2_TRACE_END (GPI2_EV_BUILD_INFRA);
+          GPI2_TRACE_END (GPI2_EV_PROC_INIT);
           return eret;
         }
       }
@@ -367,9 +397,13 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     eret = GASPI_SUCCESS;
   }
 
+  GPI2_TRACE_END (GPI2_EV_BUILD_INFRA);
+  GPI2_TRACE_END (GPI2_EV_PROC_INIT);
+
   return eret;
 
 errL:
+  GPI2_TRACE_END (GPI2_EV_PROC_INIT);
   unlock_gaspi (&(gctx->ctx_lock));
 
   return eret;
@@ -507,6 +541,8 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
 
   GASPI_VERIFY_INIT ("gaspi_proc_term");
 
+  GPI2_TRACE_BEGIN (GPI2_EV_PROC_TERM);
+
   if (lock_gaspi_tout (&(gctx->ctx_lock), timeout))
   {
     return GASPI_TIMEOUT;
@@ -541,6 +577,9 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
 
   pgaspi_statistic_print_counters();
 
+  GPI2_TRACE_END (GPI2_EV_PROC_TERM);
+  gpi2_trace_flush (gctx->rank);
+
   if (pgaspi_cleanup_core (gctx) != GASPI_SUCCESS)
   {
     goto errL;
@@ -552,6 +591,8 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
   return GASPI_SUCCESS;
 
 errL:
+  GPI2_TRACE_END (GPI2_EV_PROC_TERM);
+  gpi2_trace_flush (gctx->rank);
   unlock_gaspi (&(gctx->ctx_lock));
   return GASPI_ERROR;
 }

@@ -27,6 +27,7 @@ GPI2_NTASKS=0
 GPI2_PRG=""
 GPI2_PRG_ARGS=""
 GPI2_SET_NUMA=0
+GPI2_TRACE=""
 
 remove_temp_files()
 {
@@ -44,6 +45,7 @@ usage()
     echo "  -m, --machinefile <machine file> File with hostnames to use."
     echo "  -N, --NUMA                 Enable NUMA for processes on same node."
     echo "  -n, --nodes  <procs>       Start as many as <procs>."
+    echo "  -t, --trace [categories]   Enable tracing (default: all)."
     echo "  -h, --help                 This help."
     echo
 
@@ -118,6 +120,20 @@ while [ -n "$1" ]; do
 		print_error_exit_failure "Option -n requires a numeric argument greater than 0."
 	    fi
 	    shift
+	    ;;
+	-t | --trace)
+	    # Optional category list; falls back to "all" when the next
+	    # token is missing or not a bare [a-z0-9,] category list
+	    # (e.g. the binary path or another option).
+	    case "$2" in
+		*[!a-z0-9,]* | "")
+		    GPI2_TRACE="all"
+		    ;;
+		*)
+		    GPI2_TRACE="$2"
+		    shift
+		    ;;
+	    esac
 	    ;;
 	-*)
 	    print_error_exit_failure "Invalid option ($1). Use -h (or --help) for available options."
@@ -217,6 +233,12 @@ fi
 
 if [ $((GPI2_NTASKS / NNODES)) -gt "$GPI2_MAX_NUMA_NODES" ]; then
     print_error_exit_failure "NUMA option (-N): max procs per node: $GPI2_MAX_NUMA_NODES (used: $((GPI2_NTASKS / NNODES)))."
+fi
+
+# Tracing is global (not per-rank): export it so srun forwards it to every
+# task. slurm.env re-exports it as a safety net under restrictive --export.
+if [ -n "$GPI2_TRACE" ]; then
+    export GASPI_TRACE="$GPI2_TRACE"
 fi
 
 if ! $GPI2_LAUNCHER -n "$GPI2_NTASKS" -N "$NNODES" "$(readlink -f "$(dirname "$0")")/slurm.env" "$GPI2_MFILE" $GPI2_SET_NUMA "$GPI2_PRG" "$GPI2_PRG_ARGS" ; then

@@ -22,6 +22,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_Dev.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
+#include "GPI2_Trace.h"
 #include "PGASPI.h"
 
 #ifdef GPI2_EXP_VERBS
@@ -68,12 +69,15 @@ pgaspi_atomic_fetch_add (const gaspi_segment_id_t segment_id,
   GASPI_VERIFY_NULL_PTR (val_old);
   GASPI_VERIFY_UNALIGNED_OFF (offset);
 
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_FETCH_ADD);
+
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
 
   gaspi_return_t eret = GASPI_ERROR;
 
   if (lock_gaspi_tout (&gctx->groups[0].gl, timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_FETCH_ADD);
     return GASPI_TIMEOUT;
   }
 
@@ -105,6 +109,7 @@ pgaspi_atomic_fetch_add (const gaspi_segment_id_t segment_id,
 
 endL:
   unlock_gaspi (&gctx->groups[0].gl);
+  GPI2_TRACE_END_HOT (GPI2_EV_FETCH_ADD);
   return eret;
 }
 
@@ -124,11 +129,14 @@ pgaspi_atomic_compare_swap (const gaspi_segment_id_t segment_id,
   GASPI_VERIFY_NULL_PTR (val_old);
   GASPI_VERIFY_UNALIGNED_OFF (offset);
 
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_CAS);
+
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
   gaspi_return_t eret = GASPI_ERROR;
 
   if (lock_gaspi_tout (&gctx->groups[0].gl, timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_CAS);
     return GASPI_TIMEOUT;
   }
 
@@ -157,5 +165,6 @@ pgaspi_atomic_compare_swap (const gaspi_segment_id_t segment_id,
 
 endL:
   unlock_gaspi (&gctx->groups[0].gl);
+  GPI2_TRACE_END_HOT (GPI2_EV_CAS);
   return eret;
 }

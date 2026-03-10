@@ -27,6 +27,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_SEG.h"
 #include "GPI2_SN.h"
 #include "GPI2_Stats.h"
+#include "GPI2_Trace.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
 #include "PGASPI.h"
@@ -306,11 +307,14 @@ pgaspi_segment_alloc (const gaspi_segment_id_t segment_id,
 
   GASPI_VERIFY_INIT ("gaspi_segment_alloc");
 
+  GPI2_TRACE_BEGIN (GPI2_EV_SEG_ALLOC);
+
   gaspi_return_t const eret =
     pgaspi_segment_alloc_maybe (segment_id, NULL, size);
 
   if (eret != GASPI_SUCCESS)
   {
+    GPI2_TRACE_END (GPI2_EV_SEG_ALLOC);
     return eret;
   }
 
@@ -324,6 +328,7 @@ pgaspi_segment_alloc (const gaspi_segment_id_t segment_id,
   /* TODO: do we need to be within lock? */
   GPI2_STATS_INC_COUNT (GASPI_STATS_COUNTER_NUM_SEG_ALLOC, 1);
 
+  GPI2_TRACE_END (GPI2_EV_SEG_ALLOC);
   return eret;
 }
 
@@ -339,6 +344,8 @@ pgaspi_segment_delete (const gaspi_segment_id_t segment_id)
 
   GASPI_VERIFY_SEGMENT_SIZE (gctx->rrmd[segment_id][gctx->rank].size);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_SEG_DELETE);
+
   gaspi_return_t eret = GASPI_ERROR;
 
   lock_gaspi_tout (&(gctx->mseg_lock), GASPI_BLOCK);
@@ -348,6 +355,7 @@ pgaspi_segment_delete (const gaspi_segment_id_t segment_id)
   if (pgaspi_dev_unregister_mem (gctx, myrank_mseg) < 0)
   {
     unlock_gaspi (&(gctx->mseg_lock));
+    GPI2_TRACE_END (GPI2_EV_SEG_DELETE);
     return GASPI_ERR_DEVICE;
   }
 
@@ -393,6 +401,7 @@ pgaspi_segment_delete (const gaspi_segment_id_t segment_id)
 
   unlock_gaspi (&(gctx->mseg_lock));
 
+  GPI2_TRACE_END (GPI2_EV_SEG_DELETE);
   return eret;
 }
 
@@ -411,9 +420,12 @@ pgaspi_segment_register (const gaspi_segment_id_t segment_id,
 
   GASPI_VERIFY_SEGMENT_SIZE (gctx->rrmd[segment_id][gctx->rank].size);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_SEG_REGISTER);
+
   if (rank == gctx->rank)
   {
     gctx->rrmd[segment_id][rank].trans = 1;
+    GPI2_TRACE_END (GPI2_EV_SEG_REGISTER);
     return GASPI_SUCCESS;
   }
 
@@ -434,6 +446,7 @@ pgaspi_segment_register (const gaspi_segment_id_t segment_id,
 
   unlock_gaspi (&(gctx->ctx_lock));
 
+  GPI2_TRACE_END (GPI2_EV_SEG_REGISTER);
   return eret;
 }
 
@@ -582,10 +595,13 @@ pgaspi_segment_create (const gaspi_segment_id_t segment_id,
 
   GASPI_VERIFY_GROUP (group);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_SEG_CREATE);
+
   gaspi_return_t eret = pgaspi_segment_alloc (segment_id, size, alloc_policy);
 
   if (eret != GASPI_SUCCESS)
   {
+    GPI2_TRACE_END (GPI2_EV_SEG_CREATE);
     return eret;
   }
 
@@ -593,6 +609,7 @@ pgaspi_segment_create (const gaspi_segment_id_t segment_id,
   if (eret != GASPI_SUCCESS)
   {
     unlock_gaspi (&(gctx->ctx_lock));
+    GPI2_TRACE_END (GPI2_EV_SEG_CREATE);
     return eret;
   }
 
@@ -612,6 +629,7 @@ pgaspi_segment_create (const gaspi_segment_id_t segment_id,
 
   GPI2_STATS_INC_COUNT (GASPI_STATS_COUNTER_NUM_SEG_CREATE, 1);
 
+  GPI2_TRACE_END (GPI2_EV_SEG_CREATE);
   return eret;
 }
 
