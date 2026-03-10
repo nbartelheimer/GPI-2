@@ -191,81 +191,147 @@ AS_IF(test `./conftest_ib.exe; echo $?` -gt 0,
 # Check and set OFI path
 # ----------------------------------
 AC_DEFUN([ACX_OFI],[
+	HAVE_OFI_HEADER=0
+	HAVE_OFI_LIB=0
+	ofi_cflags=
+	ofi_libs=
+
 	if test "x$with_ofi" != xno; then
-   	   if test "x$with_ofi" != xyes; then
-	      # User specifies path(s)
+	   AC_PATH_PROG([PKG_CONFIG],[pkg-config],[no])
+	   ofi_triplet=`$CC -dumpmachine 2>/dev/null`
+
+	   if test "x$with_ofi" != xyes; then
+	      # --- User specifies a prefix path ---
 	      ac_path_ofi=$with_ofi
-      	      ac_inc_ofi=$ac_path_ofi/include/
-	      AC_CHECK_FILE($ac_inc_ofi/rdma/fi_endpoint.h,
-	      	      [HAVE_OFI_HEADER=1],[HAVE_OFI_HEADER=0])
-	      for ofilib in libfabric.so libfabric.a; do
-	          for ofilib_path in lib lib64; do
-	      	      ac_lib_ofi=$ac_path_ofi/$ofilib_path
-		            AC_CHECK_FILE($ac_lib_ofi/$ofilib,[HAVE_OFI_LIB=1],[HAVE_OFI_LIB=0])
-		            if test ${HAVE_OFI_LIB} = 1; then
-	      	          break
-		            fi
-		        done
-	        if test ${HAVE_OFI_LIB} = 1; then
-	           break
-    	        fi
-  	      done
-           else
-	      # Try to determine include path(s)
-	      inc_paths=`cpp -v /dev/null >& cppt`
-	      inc_paths=`sed -n '/^#include </,/^End/p' cppt | sed '1d;$d'`
-	      rm -f cppt
-	      for ofiinc in $inc_paths; do
-	      	  ac_inc_ofi=$ofiinc/ofi
-		  AC_CHECK_FILE($ac_inc_ofi/rdma/fi_endpoint.h,
-		  	      	  [HAVE_OFI_HEADER=1],[HAVE_OFI_HEADER=0])
-	      done
-	      # Try to determine library path(s)
-	      for ofiinc in $inc_paths; do
-	      	  ac_path_ofi=${ofiinc%/include*}
-		  for ofilib in libfabric.so libfabric.a; do
-	              for ofilib_path in lib lib64; do
-	      	      	  ac_lib_ofi=$ac_path_ofi/$ofilib_path
-		  	  AC_CHECK_FILE($ac_lib_ofi/$ofilib,[HAVE_OFI_LIB=1],[HAVE_OFI_LIB=0])
-		          if test ${HAVE_OFI_LIB} = 1; then
-	      	      	     break
-		          fi
-		      done
-	              if test ${HAVE_OFI_LIB} = 1; then
-	              	 break
-	  	      fi
-  		  done
-		  if test ${HAVE_OFI_LIB} = 1; then
-	             break
-	  	  fi
-	      done
-	      # If the above lib search fails, use autotools
-	      if test ${HAVE_OFI_LIB} != 1; then
- 	         ac_lib_ofi=
-	      	 AC_CHECK_LIB([fabric],[fi_endpoint],[HAVE_OFI_LIB=1],[HAVE_OFI_LIB=0])
-  	      fi
-   	   fi
-	fi
-	if test ${HAVE_OFI_HEADER} = 1 -a ${HAVE_OFI_LIB} = 1; then
-	   AC_SUBST(ac_inc_ofi,[-I$ac_inc_ofi])
-	   if test ! -z $ac_lib_ofi; then
-	      AC_SUBST(ac_lib_ofi,["-L$ac_lib_ofi -lfabric"])
+
+	      # 1. Try pkg-config with prefix-local paths
+	      if test "$PKG_CONFIG" != no; then
+	         ofi_pc_path="$ac_path_ofi/lib/pkgconfig:$ac_path_ofi/lib64/pkgconfig:$ac_path_ofi/share/pkgconfig"
+	         if test -n "$ofi_triplet"; then
+	            ofi_pc_path="$ofi_pc_path:$ac_path_ofi/lib/$ofi_triplet/pkgconfig"
+	         fi
+	         if PKG_CONFIG_PATH="$ofi_pc_path" $PKG_CONFIG --exists libfabric 2>/dev/null; then
+	            ofi_cflags=`PKG_CONFIG_PATH="$ofi_pc_path" $PKG_CONFIG --cflags libfabric`
+	            ofi_libs=`PKG_CONFIG_PATH="$ofi_pc_path" $PKG_CONFIG --libs libfabric`
+	            HAVE_OFI_HEADER=1
+	            HAVE_OFI_LIB=1
+	            AC_MSG_NOTICE([OFI: found via pkg-config under $ac_path_ofi])
+	         fi
+	      fi
+
+	      # 2. Manual probing fallback
+	      if test $HAVE_OFI_HEADER = 0; then
+	         AC_CHECK_FILE($ac_path_ofi/include/rdma/fi_endpoint.h,
+	         	[HAVE_OFI_HEADER=1; ofi_cflags="-I$ac_path_ofi/include"],
+	         	[HAVE_OFI_HEADER=0])
+	      fi
+	      if test $HAVE_OFI_LIB = 0; then
+	         for ofilib in libfabric.so libfabric.a; do
+	             for ofilib_path in lib lib64 lib/$ofi_triplet; do
+	                 AC_CHECK_FILE($ac_path_ofi/$ofilib_path/$ofilib,
+	                 	[HAVE_OFI_LIB=1; ofi_libs="-L$ac_path_ofi/$ofilib_path -lfabric"],
+	                 	[HAVE_OFI_LIB=0])
+	                 if test $HAVE_OFI_LIB = 1; then
+	                    break 2
+	                 fi
+	             done
+	         done
+	      fi
+
 	   else
-	      AC_SUBST(ac_lib_ofi,[-libfabric])
+	      # --- Auto-detect ---
+
+	      # 1. Try system pkg-config
+	      if test "$PKG_CONFIG" != no && $PKG_CONFIG --exists libfabric 2>/dev/null; then
+	         ofi_cflags=`$PKG_CONFIG --cflags libfabric`
+	         ofi_libs=`$PKG_CONFIG --libs libfabric`
+	         HAVE_OFI_HEADER=1
+	         HAVE_OFI_LIB=1
+	         AC_MSG_NOTICE([OFI: found via pkg-config])
+	      else
+	         # 2. Scan compiler include paths for rdma/fi_endpoint.h
+	         inc_paths=`cpp -v /dev/null >& cppt`
+	         inc_paths=`sed -n '/^#include </,/^End/p' cppt | sed '1d;$d'`
+	         rm -f cppt
+	         for ofiinc in $inc_paths; do
+	             AC_CHECK_FILE($ofiinc/rdma/fi_endpoint.h,
+	             	[HAVE_OFI_HEADER=1; ofi_cflags="-I$ofiinc"],
+	             	[HAVE_OFI_HEADER=0])
+	             if test $HAVE_OFI_HEADER = 1; then
+	                break
+	             fi
+	         done
+	         # 3. Scan lib paths (lib, lib64, multiarch)
+	         for ofiinc in $inc_paths; do
+	             ac_path_ofi=${ofiinc%/include*}
+	             for ofilib in libfabric.so libfabric.a; do
+	                 for ofilib_path in lib lib64 lib/$ofi_triplet; do
+	                     AC_CHECK_FILE($ac_path_ofi/$ofilib_path/$ofilib,
+	                     	[HAVE_OFI_LIB=1; ofi_libs="-L$ac_path_ofi/$ofilib_path -lfabric"],
+	                     	[HAVE_OFI_LIB=0])
+	                     if test $HAVE_OFI_LIB = 1; then
+	                        break 3
+	                     fi
+	                 done
+	             done
+	         done
+	         # 4. Last resort: let the linker find it
+	         if test $HAVE_OFI_LIB != 1; then
+	            AC_CHECK_LIB([fabric],[fi_endpoint],
+	            	[HAVE_OFI_LIB=1; ofi_libs="-lfabric"],
+	            	[HAVE_OFI_LIB=0])
+	         fi
+	      fi
 	   fi
-     HAVE_OFI=1
+	fi
+
+	if test $HAVE_OFI_HEADER = 1 -a $HAVE_OFI_LIB = 1; then
+	   ACX_OFI_SMOKE([$ofi_cflags],[$ofi_libs],[HAVE_OFI=1],[HAVE_OFI=0])
 	else
 	   HAVE_OFI=0
 	fi
+
+	if test $HAVE_OFI = 1; then
+	   AC_SUBST(ac_inc_ofi,[$ofi_cflags])
+	   AC_SUBST(ac_lib_ofi,[$ofi_libs])
+	else
+	   if test $HAVE_OFI_HEADER = 0 -a $HAVE_OFI_LIB = 0; then
+	      AC_MSG_NOTICE([OFI: could not find libfabric headers or library.])
+	      AC_MSG_NOTICE([  Debian/Ubuntu: apt install libfabric-dev])
+	      AC_MSG_NOTICE([  RHEL/Fedora:   dnf install libfabric-devel])
+	      if test "x$with_ofi" != xyes -a "$PKG_CONFIG" = no; then
+	         AC_MSG_NOTICE([  Tip: installing pkg-config improves library detection.])
+	      fi
+	   fi
+	fi
 	])
 
-#ac_inc_ofi=/home/machado/libfabric_poc/installations/libfabric/include
-#ac_lib_ofi=/home/machado/libfabric_poc/installations/libfabric/lib/
-#AC_CHECK_FILE($ac_inc_ofi/rdma/fi_endpoint.h,[HAVE_OFI=1],[HAVE_OFI=0])
-#AC_CHECK_FILE($ac_lib_ofi/libfabric.so,[HAVE_OFI=1],[HAVE_OFI=0])
-#AC_SUBST(ac_inc_ofi,[-I$ac_inc_ofi])
-#AC_SUBST(ac_lib_ofi,["-L$ac_lib_ofi -lfabric"])
-])
+################################################
+# OFI compile and link smoke test
+# ----------------------------------
+AC_DEFUN([ACX_OFI_SMOKE],[
+	AC_MSG_CHECKING([whether OFI headers and libraries are usable])
+	AC_LANG_PUSH(C)
+
+cat >conftest_ofi.c <<_ACEOF
+#include <rdma/fabric.h>
+int main(){
+  struct fi_info *hints = fi_allocinfo();
+  fi_freeinfo(hints);
+  return 0;
+}
+_ACEOF
+
+	OLD_CFLAGS=$CFLAGS
+	CFLAGS="$AM_CFLAGS $CFLAGS $1 $2"
+	AS_IF($CC conftest_ofi.c $CFLAGS -o conftest_ofi.exe,
+	  [AC_MSG_RESULT([yes]); $3],
+	  [AC_MSG_RESULT([no]); $4]
+	)
+	CFLAGS=$OLD_CFLAGS
+	rm -f conftest_ofi.c conftest_ofi.exe
+	AC_LANG_POP([C])
+	])
 
 ################################################
 # Check and set ETHERNET path
