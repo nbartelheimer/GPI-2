@@ -256,9 +256,9 @@ pgaspi_gethostname (gaspi_context_t const *const gctx, const unsigned int id)
 }
 
 int
-pgaspi_ranks_are_local (gaspi_context_t const *const gctx,
-                        gaspi_rank_t a, gaspi_rank_t b)
+pgaspi_ranks_are_local (gaspi_rank_t a, gaspi_rank_t b)
 {
+  gaspi_context_t const *const gctx = &glb_gaspi_ctx;
   return gctx->topology->hosts_ids[a] == gctx->topology->hosts_ids[b];
 }
 

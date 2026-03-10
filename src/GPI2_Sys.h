@@ -82,7 +82,6 @@ int gaspi_get_affinity_mask (const int sock, cpu_set_t * cpuset);
 char* pgaspi_gethostname (gaspi_context_t const *const gctx,
                           const unsigned int id);
 
-int pgaspi_ranks_are_local (gaspi_context_t const *const gctx,
-                            gaspi_rank_t a, gaspi_rank_t b);
+int pgaspi_ranks_are_local (gaspi_rank_t a, gaspi_rank_t b);
 
 #endif //GPI2_SYS
