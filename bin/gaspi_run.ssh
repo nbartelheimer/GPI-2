@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Copyright (c) Fraunhofer ITWM, 2013-2025
 
@@ -29,7 +29,7 @@ GPI2_MFILE=""
 GPI2_NNODES=0
 GPI2_PING_HOSTNAMES_OPTION=0
 GPI2_PRG=""
-GPI2_PRG_ARGS=""
+GPI2_PRG_ARGS=()
 GPI2_SET_NUMA=0
 GPI2_USE_DEBUGGER=0
 
@@ -61,7 +61,8 @@ usage()
 kill_procs_in_all_hosts()
 {
     if [ ! -r "$GPI2_MFILE" ]; then
-	print_error_exit_failure "Failed to read machine file ($GPI2_MFILE) when trying to kill procs."
+	echo "Warning: Cannot read machine file ($GPI2_MFILE). Remote processes may still be running."
+	return
     fi
 
     local uniq_mfile=$(uniq "$GPI2_MFILE")
@@ -202,14 +203,19 @@ validate_machinefile()
 # spawn_procs_on_hosts <machinefile> <number of ranks> <program to spawn> <program options>
 spawn_procs_on_hosts()
 {
-    local mfile=$1
-    local numranks=$2
-    local prg=$3
-    local prg_args=$4
+    local mfile="$1"
+    local numranks="$2"
+    local prg="$3"
+    shift 3
+    local prg_args=""
+    if [ $# -gt 0 ]; then
+	prg_args=$(printf '%q ' "$@")
+    fi
 
     local rank=0;
     local node=0;
     local master_node=$(head -n 1 $mfile)
+    local local_hostname=$(hostname)
 
     uniq -c "$mfile" | while read -r count host; do
 	cmd="${GPI2_LAUNCHER_SPAWNER} ${master_node}"
@@ -223,7 +229,11 @@ spawn_procs_on_hosts()
 	cmd="$cmd $GPI2_SET_NUMA"
 	cmd="$cmd ${prg} ${prg_args}"
 
-	$GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd $(cat /dev/null) 2>&1" &
+	if [ "$host" = "$local_hostname" ]; then
+	    GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd > /dev/null 2>&1 &
+	else
+	    $GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd $(cat /dev/null) 2>&1" &
+	fi
 
 	rank=$((rank+count))
 	node=$((node+1))
@@ -244,7 +254,7 @@ if [ ! -x "${GPI2_LAUNCHER_SPAWNER}" ]; then
     echo
     echo "The required spawner (ssh) is missing (or not executable)"
     echo
-    clean_exit 0
+    clean_exit 1
 fi
 
 #command line parsing
@@ -254,8 +264,7 @@ while [ -n "$1" ]; do
 	    if [ -r "$2" ]; then
 		GPI2_MFILE=$2
 	    else
-		echo "Cannot read file $2 (-m option) (or file does not exist)"
-                clean_exit 0
+		print_error_exit_failure "Cannot read file $2 (-m option) (or file does not exist)"
 	    fi
 	    shift
 	    ;;
@@ -307,7 +316,7 @@ while [ -n "$1" ]; do
 		if [ -x "$FULLPATH" ]; then
 		    GPI2_PRG="$FULLPATH"
 		    shift
-		    GPI2_PRG_ARGS="$*"
+		    GPI2_PRG_ARGS=("$@")
 		    break
 		else
 		    print_error_exit_failure "Cannot execute $1 (or file does not exist)"
@@ -336,7 +345,7 @@ trap kill_procs_trap TERM INT QUIT
 
 #use all hosts in machine file
 if [ "$GPI2_NNODES" -eq 0 ]; then
-    GPI2_NNODES=$(wc -l "$GPI2_MFILE" |cut -d' ' -f1)
+    GPI2_NNODES=$(wc -l < "$GPI2_MFILE")
 fi
 
 validate_machinefile "$GPI2_MFILE" "$GPI2_NNODES"
@@ -354,7 +363,7 @@ if [ -O /tmp/.last_gaspi_prg ]; then
 fi
 
 #spawn processes (other than master/rank 0)
-spawn_procs_on_hosts $GPI2_MFILE $GPI2_NNODES $GPI2_PRG $GPI2_PRG_ARGS
+spawn_procs_on_hosts "$GPI2_MFILE" "$GPI2_NNODES" "$GPI2_PRG" "${GPI2_PRG_ARGS[@]}"
 
 
 #start rank 0
@@ -386,41 +395,23 @@ if [ "$first_hostname" != "$hn" ]; then
 	echo "Warning: Failed to copy machinefile to remote host. Program might not start correctly."
     fi
 
-    #prepare command to execute remotely
-    cmd="/bin/sh -c '${master_env}'"
-#    cmd="$cmd export GASPI_MASTER=$first_hostname"
-#    cmd="$cmd; export GASPI_SOCKET=0"
-#    cmd="$cmd; export GASPI_MFILE=$GPI2_MFILE"
-#    cmd="$cmd; export GASPI_RANK=0"
-#    cmd="$cmd; export GASPI_NRANKS=$GPI2_NNODES"
-
-#    if [ $GPI2_SET_NUMA -eq 1 ]; then
-#	cmd="$cmd; export GASPI_SET_NUMA_SOCKET=1"
-    #    fi
-
-    cmd="$master_env; $GPI2_MASTER_PRG $GPI2_PRG_ARGS"
+    local escaped_args=""
+    if [ ${#GPI2_PRG_ARGS[@]} -gt 0 ]; then
+	escaped_args=$(printf '%q ' "${GPI2_PRG_ARGS[@]}")
+    fi
+    cmd="$master_env; $GPI2_MASTER_PRG $escaped_args"
 
     if ! $GPI2_LAUNCHER "$first_hostname" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") eval $cmd" ; then
 	echo "Error: Failed to start $GPI2_MASTER_PRG on $first_hostname"
 	clean_exit 1
     fi
 else
-    # export GASPI_MASTER="$hn"
-
-    # if [ $GPI2_SET_NUMA -eq 1 ]; then
-    #	export GASPI_SET_NUMA_SOCKET=1
-    # fi
-    # export GASPI_SOCKET=0
-    # export GASPI_MFILE="$GPI2_MFILE"
-    # export GASPI_RANK=0
-    # export GASPI_NRANKS="$GPI2_NNODES"
-
     eval $master_env
 
     if [ $GPI2_USE_DEBUGGER != 0 ]; then
-	gdb --args "$GPI2_MASTER_PRG" "$GPI2_PRG_ARGS"
+	gdb --args "$GPI2_MASTER_PRG" "${GPI2_PRG_ARGS[@]}"
     else
-	$GPI2_MASTER_PRG "$GPI2_PRG_ARGS"
+	"$GPI2_MASTER_PRG" "${GPI2_PRG_ARGS[@]}"
     fi
     if [ $? != 0 ]; then
 	clean_exit 1
