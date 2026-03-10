@@ -244,9 +244,17 @@ gpi2_topology_set_hosts_info (gpi2_topology_t* topo)
   topo->hosts_ids = (uint32_t*) (p + hosts_ids_off);
 
   /* allocate for number of entries per host */
-  const int max_host_id = topo->hosts_ids[n-1] + 1;
+  uint32_t max_host_id = 0;
+  for (size_t i = 0; i < n; i++)
+  {
+    if (topo->hosts_ids[i] > max_host_id)
+    {
+      max_host_id = topo->hosts_ids[i];
+    }
+  }
+  const size_t num_hosts = (size_t) max_host_id + 1;
 
-  topo->count_per_host = (size_t*) calloc (max_host_id, sizeof (size_t));
+  topo->count_per_host = (size_t*) calloc (num_hosts, sizeof (size_t));
   if (!topo->count_per_host)
   {
     free (topo->hosts);
