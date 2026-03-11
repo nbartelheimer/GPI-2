@@ -32,12 +32,8 @@ pgaspi_dev_poll_groups (gaspi_context_t* const gctx)
     return 0;
   }
 
-  struct fi_cq_err_entry* comp =
-    malloc (nelems * sizeof (struct fi_cq_err_entry));
-  if (NULL == comp)
-  {
-    return GASPI_ERR_MEMALLOC;
-  }
+#define POLL_BATCH_SIZE 64
+  struct fi_cq_err_entry comp[POLL_BATCH_SIZE];
 
   gaspi_ofi_ctx* ofi_ctx = gctx->device->ctx;
 
@@ -53,7 +49,8 @@ pgaspi_dev_poll_groups (gaspi_context_t* const gctx)
 
       if (fabric_ctx && fabric_ctx->qGroups)
       {
-        ret = fi_cq_read (fabric_ctx->qGroups->scq, comp, nelems);
+        int batch = nelems < POLL_BATCH_SIZE ? nelems : POLL_BATCH_SIZE;
+        ret = fi_cq_read (fabric_ctx->qGroups->scq, comp, batch);
         if (ret > 0)
         {
           __atomic_sub_fetch (&gctx->ne_count_grp, ret, __ATOMIC_RELAXED);
@@ -66,14 +63,12 @@ pgaspi_dev_poll_groups (gaspi_context_t* const gctx)
             GASPI_DEBUG_PRINT_ERROR
               ("Groups CQ read error (%d: %s)", ret, fi_strerror (-ret));
 
-          free (comp);
           return -1;
         }
       }
     }
   } while (gctx->ne_count_grp > 0);
 
-  free (comp);
   return 0;
 }
 
