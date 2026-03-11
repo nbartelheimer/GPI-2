@@ -316,15 +316,12 @@ pgaspi_dev_write_list (gaspi_context_t * const gctx,
                        gaspi_size_t * const size,
                        const gaspi_queue_id_t queue)
 {
-  gaspi_number_t num_entries = num;
-
   gaspi_return_t ret = GASPI_ERROR;
 
   for (gaspi_number_t i = 0; i < num; i++)
   {
     if (size[i] == 0)
     {
-      num_entries--;
       continue;
     }
 
@@ -355,15 +352,12 @@ pgaspi_dev_read_list (gaspi_context_t * const gctx,
                       gaspi_size_t * const size,
                       const gaspi_queue_id_t queue)
 {
-  gaspi_number_t num_entries = num;
-
   gaspi_return_t ret = GASPI_ERROR;
 
   for (gaspi_number_t i = 0; i < num; i++)
   {
     if (size[i] == 0)
     {
-      num_entries--;
       continue;
     }
 
