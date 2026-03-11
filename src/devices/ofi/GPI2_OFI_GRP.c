@@ -58,10 +58,22 @@ pgaspi_dev_poll_groups (gaspi_context_t* const gctx)
         {
           __atomic_sub_fetch (&gctx->ne_count_grp, ret, __ATOMIC_RELAXED);
         }
+        else if (ret < 0 && ret != -FI_EAGAIN)
+        {
+          if (ret == -FI_EAVAIL)
+            pgaspi_ofi_cq_readerr (fabric_ctx->qGroups->scq);
+          else
+            GASPI_DEBUG_PRINT_ERROR
+              ("Groups CQ read error (%d: %s)", ret, fi_strerror (-ret));
+
+          free (comp);
+          return -1;
+        }
       }
     }
   } while (gctx->ne_count_grp > 0);
 
+  free (comp);
   return 0;
 }
 
