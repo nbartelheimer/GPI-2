@@ -1535,9 +1535,19 @@ pgaspi_dev_comm_queue_connect (gaspi_context_t const *const gctx,
     return -1;
   }
 
+  const int max_wait_us = 10 * 1000 * 1000; /* 10 seconds */
+  int waited_us = 0;
   while (strcmp ((char*) io_addr, "") == 0)
   {
     usleep (10);
+    waited_us += 10;
+    if (waited_us > max_wait_us)
+    {
+      GASPI_DEBUG_PRINT_ERROR
+        ("Timeout waiting for remote queue address (rank %d, queue %d).",
+         i, q);
+      return -1;
+    }
   }
 
   int ret = fi_av_insert (fabric_ctx->av,
