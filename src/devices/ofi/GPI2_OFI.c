@@ -174,7 +174,6 @@ pgaspi_ofi_init_getinfo_all_providers()
   /* required to get complete list of providers for initial hints */
   const char* prov_env_var = "FI_PROVIDER";
   const char* env_prov_name = getenv (prov_env_var);
-  char* _prov_name = NULL;
 
   if (NULL != env_prov_name)
   {
@@ -208,10 +207,9 @@ pgaspi_ofi_init_getinfo_all_providers()
   }
 
   /* Restore env var */
-  if (_prov_name)
+  if (env_prov_name)
   {
-    setenv (prov_env_var, _prov_name, 1);
-    free (_prov_name);
+    setenv (prov_env_var, env_prov_name, 1);
   }
 
   fi_freeinfo (init_hints);
