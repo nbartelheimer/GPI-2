@@ -1274,7 +1274,30 @@ int pgaspi_dev_connect_context (gaspi_context_t const *const gctx,
 int pgaspi_dev_disconnect_context (gaspi_context_t * const gctx,
                                    const int i)
 {
-  //TODO: empty function?
+  gaspi_ofi_ctx* ofi_ctx = gctx->device->ctx;
+  if (NULL == ofi_ctx)
+  {
+    return -1;
+  }
+
+  struct ofi_fabric* fabric_ctx = ofi_ctx->rank_fabric_map[i];
+  if (NULL == fabric_ctx)
+  {
+    return 0;
+  }
+
+  fi_av_remove (fabric_ctx->av, &fabric_ctx->passive_fi_addr[i], 1, 0);
+  fi_av_remove (fabric_ctx->av, &fabric_ctx->atomic_fi_addr[i], 1, 0);
+  fi_av_remove (fabric_ctx->av, &fabric_ctx->groups_fi_addr[i], 1, 0);
+
+  const gaspi_uint conf_q_num = gctx->config->queue_num;
+  for (gaspi_uint c = 0; c < conf_q_num; c++)
+  {
+    fi_av_remove (fabric_ctx->av, &fabric_ctx->io_fi_addr[c][i], 1, 0);
+  }
+
+  ofi_ctx->rank_fabric_map[i] = NULL;
+
   return 0;
 }
 
