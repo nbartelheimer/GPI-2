@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <rdma/fi_atomic.h>
 #include <rdma/fi_endpoint.h>
 #include <rdma/fabric.h>
 
@@ -611,6 +612,23 @@ pgaspi_ofi_create_queues (struct ofi_fabric* fabric_ctx,
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to create atomic queue (ofi).");
 
+    goto errL;
+  }
+
+  size_t atomic_count = 0;
+  if (fi_fetch_atomicvalid (fabric_ctx->qAtomic->ep,
+                            FI_UINT64, FI_SUM, &atomic_count) != 0)
+  {
+    GASPI_DEBUG_PRINT_ERROR
+      ("Atomic fetch_add (FI_UINT64, FI_SUM) not supported.");
+    goto errL;
+  }
+
+  if (fi_compare_atomicvalid (fabric_ctx->qAtomic->ep,
+                              FI_UINT64, FI_CSWAP, &atomic_count) != 0)
+  {
+    GASPI_DEBUG_PRINT_ERROR
+      ("Atomic compare_swap (FI_UINT64, FI_CSWAP) not supported.");
     goto errL;
   }
 
