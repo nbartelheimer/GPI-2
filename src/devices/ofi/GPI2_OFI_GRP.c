@@ -85,7 +85,6 @@ pgaspi_dev_post_group_write (gaspi_context_t* const gctx,
  struct ofi_fabric* fabric_ctx = ofi_ctx->rank_fabric_map[dst];
 
  const gaspi_rc_mseg_t local_seg = gctx->groups[group].rrcd[gctx->rank];
-// const gaspi_rc_mseg_t remote_seg = gctx->groups[group].rrcd[dst];
 
  uint64_t remote_addr =
     fabric_ctx->info->domain_attr->mr_mode & FI_MR_VIRT_ADDR ?

@@ -771,12 +771,10 @@ pgaspi_dev_read_notify (gaspi_context_t * const gctx,
     return ret;
   }
 
-  /* //TODO: wait or not? */
-  /* /\* ret = pgaspi_dev_wait (gctx, queue, GASPI_BLOCK); *\/ */
-  /* /\* if (ret != GASPI_SUCCESS) *\/ */
-  /* /\* { *\/ */
-  /* /\*   return ret; *\/ */
-  /* /\* } *\/ */
+  /* NOTE: No explicit wait between read and notify. Ordering relies on
+   * the provider delivering operations in submission order on this
+   * endpoint. If this assumption does not hold for a provider, an
+   * explicit pgaspi_dev_wait may be needed here. */
 
   return pgaspi_dev_remote_notify (gctx,
                                    segment_id_local, segment_id_remote,
@@ -810,12 +808,10 @@ pgaspi_dev_read_list_notify (gaspi_context_t * const gctx,
     return ret;
   }
 
-  /* //TODO: wait or not? */
-  /* ret = pgaspi_dev_wait (gctx, queue, GASPI_BLOCK); */
-  /* if (ret != GASPI_SUCCESS) */
-  /* { */
-  /*   return ret; */
-  /* } */
+  /* NOTE: No explicit wait between read and notify. Ordering relies on
+   * the provider delivering operations in submission order on this
+   * endpoint. If this assumption does not hold for a provider, an
+   * explicit pgaspi_dev_wait may be needed here. */
 
   return
     pgaspi_dev_remote_notify (gctx,

@@ -148,7 +148,6 @@ pgaspi_ofi_set_initial_hints (void)
   {
     hints->ep_attr->type = FI_EP_RDM;
     hints->caps = FI_RMA | FI_ATOMIC | FI_MSG;
-//    hints->caps = FI_RMA | FI_MSG;
 
     hints->domain_attr->mr_mode =
       FI_MR_ENDPOINT  |
@@ -160,7 +159,6 @@ pgaspi_ofi_set_initial_hints (void)
     hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
 
     hints->tx_attr->tclass = FI_TC_BULK_DATA;
-//    hints->domain_attr->threading = FI_THREAD_DOMAIN;
   }
 
   return hints;
@@ -330,8 +328,6 @@ pgaspi_ofi_progress_engine (void* arg)
 
     //progress on groups queue
     err += pgaspi_ofi_make_progress_on_cq (fabric_ctx->qGroups->scq);
-
-//    usleep (1);
   }
 
 #ifdef GPI2_OFI_DEBUG_MODE
@@ -1175,8 +1171,6 @@ int pgaspi_dev_init_core (gaspi_context_t * const gctx)
 
     //TODO: pass ofi_ctx plus infos needed (tnc, config (for queue_num and
     //queue_size_max), rank)
-    //gaspi_ofi_ctx* const ofi_ctx = (gaspi_ofi_ctx*) gctx->device->ctx;
-
     err = pgaspi_ofi_initialize (gctx);
 
     if (err != 0)
