@@ -844,7 +844,9 @@ pgaspi_ofi_cleanup_fabric_ctx (struct ofi_fabric* fabric_ctx)
   }
 
   /* Stop progress thread */
-  if (fabric_ctx->info->domain_attr->data_progress == FI_PROGRESS_MANUAL)
+  if (fabric_ctx->info &&
+      fabric_ctx->info->domain_attr &&
+      fabric_ctx->info->domain_attr->data_progress == FI_PROGRESS_MANUAL)
   {
     int stop = pgaspi_ofi_stop_progress_engine (fabric_ctx);
     if (stop != 0)
