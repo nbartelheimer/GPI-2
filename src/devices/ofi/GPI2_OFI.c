@@ -1147,7 +1147,7 @@ int pgaspi_dev_init_core (gaspi_context_t * const gctx)
 
   if (NULL != gctx)
   {
-    gctx->device = calloc (1, sizeof (gctx->device));
+    gctx->device = calloc (1, sizeof (*gctx->device));
     if (NULL == gctx->device)
     {
       return -1;
