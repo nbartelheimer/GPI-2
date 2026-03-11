@@ -137,8 +137,18 @@ ofi_register_multi_domain_mr (gaspi_ofi_ctx* ofi_ctx,
                                       buf,
                                       size,
                                       key);
+        if (NULL == mr)
+        {
+          for (int g = 0; g < f; g++)
+            if (ofi_mr->mr_fabric[g])
+              fi_close (&ofi_mr->mr_fabric[g]->fid);
+
+          free (ofi_mr);
+          return NULL;
+        }
+
         ofi_mr->mr_fabric[f] = mr;
-        ofi_mr->rkey_fabric[f] = mr ? fi_mr_key (mr) : 0;
+        ofi_mr->rkey_fabric[f] = fi_mr_key (mr);
       }
     }
   }
