@@ -311,7 +311,8 @@ pgaspi_ofi_progress_engine (void* arg)
 
   int err = 0;
 
-  while (fabric_ctx->keep_progress_engine_running)
+  while (__atomic_load_n (&fabric_ctx->keep_progress_engine_running,
+                          __ATOMIC_RELAXED))
   {
     //progress on communication queues
     for (int q = 0; q < fabric_ctx->num_qC; q++)
@@ -347,7 +348,8 @@ pgaspi_ofi_progress_engine (void* arg)
 int
 pgaspi_ofi_start_progress_engine (struct ofi_fabric* fabric_ctx)
 {
-  fabric_ctx->keep_progress_engine_running = 1;
+  __atomic_store_n (&fabric_ctx->keep_progress_engine_running,
+                    1, __ATOMIC_RELAXED);
 
   return pthread_create (&fabric_ctx->progress_thread,
                          NULL,
@@ -358,7 +360,8 @@ pgaspi_ofi_start_progress_engine (struct ofi_fabric* fabric_ctx)
 int
 pgaspi_ofi_stop_progress_engine (struct ofi_fabric* fabric_ctx)
 {
-  fabric_ctx->keep_progress_engine_running = 0;
+  __atomic_store_n (&fabric_ctx->keep_progress_engine_running,
+                    0, __ATOMIC_RELAXED);
 
   return pthread_join (fabric_ctx->progress_thread, NULL);
 }
