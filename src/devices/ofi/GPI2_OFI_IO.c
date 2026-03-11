@@ -59,12 +59,8 @@ pgaspi_dev_ofi_poll (gaspi_context_t * const gctx,
                      int handle_error,
                      int* polled)
 {
-  struct fi_cq_data_entry* comp =
-    malloc (count * sizeof (struct fi_cq_data_entry));
-  if (NULL == comp)
-  {
-    return GASPI_ERR_MEMALLOC;
-  }
+#define POLL_BATCH_SIZE 64
+  struct fi_cq_data_entry comp[POLL_BATCH_SIZE];
 
   struct ofi_fabric* fabric_ctx = NULL;
 
@@ -83,7 +79,8 @@ pgaspi_dev_ofi_poll (gaspi_context_t * const gctx,
 
       if (fabric_ctx && fabric_ctx->qC[queue])
       {
-        ret = fi_cq_read (fabric_ctx->qC[queue]->scq, comp, to_poll);
+        int batch = to_poll < POLL_BATCH_SIZE ? to_poll : POLL_BATCH_SIZE;
+        ret = fi_cq_read (fabric_ctx->qC[queue]->scq, comp, batch);
 
         if (ret < 0 && ret != -FI_EAGAIN)
         {
@@ -129,7 +126,6 @@ pgaspi_dev_ofi_poll (gaspi_context_t * const gctx,
 
   *polled = count - to_poll;
 
-  free (comp);
   return GASPI_SUCCESS;
 }
 
