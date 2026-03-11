@@ -206,18 +206,21 @@ pgaspi_dev_unregister_mem (gaspi_context_t const *const gctx,
   /* Note: Magic number 2 for the data and notifications spaces */
   for (int s = 0; s < 2; s++)
   {
+    struct ofi_mr* ofi_mr = (struct ofi_mr*) seg->mr[s];
+    if (!ofi_mr)
+      continue;
+
     for (int f = 0; f < GPI2_OFI_MAX_FABRICS; f++)
     {
-      struct ofi_mr* ofi_mr = (struct ofi_mr*) seg->mr[s];
-
-      if (ofi_mr && ofi_mr->mr_fabric[f])
+      if (ofi_mr->mr_fabric[f])
       {
         if (fi_close (&((struct fid_mr*) ofi_mr->mr_fabric[f])->fid))
-        {
           return -1;
-        }
       }
     }
+
+    free (ofi_mr);
+    seg->mr[s] = NULL;
   }
 
   return 0;
