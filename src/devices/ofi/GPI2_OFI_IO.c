@@ -21,10 +21,16 @@
 #include "GPI2_SEG.h"
 #include "GPI2_Utility.h"
 
-#define GPI2_OFI_MR_REMOTE_ADDR(fabric, segment, offset)        \
-  fabric_ctx->info->domain_attr->mr_mode & FI_MR_VIRT_ADDR ?    \
-  (uint64_t)(remote_seg.data.addr + offset_remote) :            \
-  (uint64_t) offset_remote;
+static inline uint64_t
+pgaspi_ofi_remote_addr (struct ofi_fabric* fabric_ctx,
+                        const gaspi_rc_mseg_t* remote_seg,
+                        gaspi_offset_t offset)
+{
+  if (fabric_ctx->info->domain_attr->mr_mode & FI_MR_VIRT_ADDR)
+    return (uint64_t)(remote_seg->data.addr + offset);
+
+  return (uint64_t) offset;
+}
 
 void
 pgaspi_ofi_cq_readerr (struct fid_cq *cq)
@@ -196,7 +202,7 @@ pgaspi_dev_write  (gaspi_context_t * const gctx,
   const gaspi_rc_mseg_t remote_seg = gctx->rrmd[segment_id_remote][rank];
 
   const uint64_t remote_addr =
-    GPI2_OFI_MR_REMOTE_ADDR (fabric_ctx, remote_seg, offset_remote);
+    pgaspi_ofi_remote_addr (fabric_ctx, &remote_seg, offset_remote);
 
   void* const local_addr = (void*) local_seg.data.addr + offset_local;
 
@@ -267,7 +273,7 @@ pgaspi_dev_read (gaspi_context_t * const gctx,
   const gaspi_rc_mseg_t remote_seg = gctx->rrmd[segment_id_remote][rank];
 
   const uint64_t remote_addr =
-    GPI2_OFI_MR_REMOTE_ADDR (fabric_ctx, remote_seg, offset_remote);
+    pgaspi_ofi_remote_addr (fabric_ctx, &remote_seg, offset_remote);
 
   void* local_addr = (void*) local_seg.data.addr + offset_local;
 
@@ -506,7 +512,7 @@ pgaspi_dev_write_notify_with_rma_iov (gaspi_context_t * const gctx,
   const gaspi_rc_mseg_t local_seg = gctx->rrmd[segment_id_local][gctx->rank];
 
   const uint64_t remote_addr =
-    GPI2_OFI_MR_REMOTE_ADDR (fabric_ctx, remote_seg, offset_remote);
+    pgaspi_ofi_remote_addr (fabric_ctx, &remote_seg, offset_remote);
 
 
   uint64_t remote_notf_addr =
