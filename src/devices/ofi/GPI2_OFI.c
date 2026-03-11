@@ -425,21 +425,31 @@ pgaspi_ofi_create_queue (struct ofi_fabric* fabric_ctx,
   //if queue type is ATOMIC we need to alter the default capabilities
   //to include FI_ATOMIC. On IB, the performance of an endpoint with
   //FI_ATOMIC drops considerably.
+  int err;
   if (type == ATOMIC)
   {
     fabric_ctx->hints->caps = FI_ATOMIC | FI_RMA | FI_MSG;
 
-    fabric_ctx->info = pgaspi_ofi_getinfo (fabric_ctx->hints);
-    if (NULL == fabric_ctx->info)
+    struct fi_info* atomic_info = pgaspi_ofi_getinfo (fabric_ctx->hints);
+    if (NULL == atomic_info)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to get fabric information (ofi).");
       free (q);
       return NULL;
     }
+
+    err = fi_endpoint (fabric_ctx->domain, atomic_info, &(q->ep), NULL);
+    fi_freeinfo (atomic_info);
+
+    //keep ATOMIC in hints due to a libfabric bug in older versions
+    fabric_ctx->hints->caps = FI_RMA | FI_MSG | FI_ATOMIC;
+  }
+  else
+  {
+    /* Endpoint */
+    err = fi_endpoint (fabric_ctx->domain, fabric_ctx->info, &(q->ep), NULL);
   }
 
-  /* Endpoint */
-  int err = fi_endpoint (fabric_ctx->domain, fabric_ctx->info, &(q->ep), NULL);
   if (err)
   {
     free (q);
@@ -447,24 +457,6 @@ pgaspi_ofi_create_queue (struct ofi_fabric* fabric_ctx,
     GASPI_DEBUG_PRINT_ERROR
       ("Failed to create endpoint (ofi): error %d.", err);
     return NULL;
-  }
-
-  //Set info capabilities back to minimum (RMA and MSG)
-  if (type == ATOMIC)
-  {
-    //we need to keep the ATOMIC due to a libfabric bug in older
-    //versions
-    fabric_ctx->hints->caps = FI_RMA | FI_MSG | FI_ATOMIC;
-//    fabric_ctx->hints->caps = FI_RMA | FI_MSG;
-
-
-    fabric_ctx->info = pgaspi_ofi_getinfo (fabric_ctx->hints);
-    if (NULL == fabric_ctx->info)
-    {
-      GASPI_DEBUG_PRINT_ERROR ("Failed to get fabric information (ofi).");
-      free (q);
-      return NULL;
-    }
   }
 
   /* Completion queue(s) */
