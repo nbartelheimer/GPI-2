@@ -1,0 +1,11 @@
+#!/bin/bash
+# Mock pgrep: logs invocation and returns 0 (found) or 1 (not found).
+# Set MOCK_PGREP_RUNNING=<progname> to simulate a running process.
+# The program name is always the last argument.
+
+progname="${@: -1}"
+echo "MOCK_PGREP $*" >> "$MOCK_LOG"
+if [ "${MOCK_PGREP_RUNNING:-}" = "$progname" ]; then
+    exit 0
+fi
+exit 1

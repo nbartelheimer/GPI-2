@@ -1,0 +1,11 @@
+#!/bin/bash
+# Mock ping: succeeds by default.
+# Set MOCK_PING_FAIL=<hostname> to simulate an unreachable host.
+
+# Last argument is the host being pinged
+host="${@: -1}"
+echo "MOCK_PING host=$host" >> "$MOCK_LOG"
+if [ "${MOCK_PING_FAIL:-}" = "$host" ]; then
+    exit 1
+fi
+exit 0

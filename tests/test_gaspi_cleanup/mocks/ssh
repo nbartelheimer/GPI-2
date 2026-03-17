@@ -1,0 +1,26 @@
+#!/bin/bash
+# Mock ssh: logs invocation and executes the command locally.
+# Handles -o options before the host argument.
+# Set MOCK_SSH_FAIL=<host> to simulate an SSH connectivity failure for that host.
+
+# Log the full invocation so tests can inspect options
+echo "MOCK_SSH_ARGS $*" >> "$MOCK_LOG"
+
+# Skip -o Key=Value pairs and other flags to reach the host
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) shift 2 ;;
+        -*) shift ;;
+        *) break ;;
+    esac
+done
+
+host="$1"; shift
+cmd="$*"
+echo "MOCK_SSH host=$host cmd=$cmd" >> "$MOCK_LOG"
+
+if [ "${MOCK_SSH_FAIL:-}" = "$host" ]; then
+    exit 255  # simulate unreachable host (real ssh uses 255 for connectivity errors)
+fi
+
+eval "$cmd"

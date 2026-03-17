@@ -1,0 +1,6 @@
+#!/bin/bash
+# Mock killall: logs invocation and returns a configurable exit code.
+# Set MOCK_KILLALL_EXIT=<code> to control the return value.
+
+echo "MOCK_KILLALL $*" >> "$MOCK_LOG"
+exit "${MOCK_KILLALL_EXIT:-0}"

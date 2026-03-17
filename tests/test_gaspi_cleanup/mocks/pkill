@@ -1,0 +1,6 @@
+#!/bin/bash
+# Mock pkill: logs invocation and returns a configurable exit code.
+# Set MOCK_PKILL_EXIT=<code> to control the return value.
+
+echo "MOCK_PKILL $*" >> "$MOCK_LOG"
+exit "${MOCK_PKILL_EXIT:-0}"
