@@ -18,6 +18,7 @@
 
 PRG=$(/bin/cat /tmp/.last_gaspi_prg 2> /dev/null)
 MFILE=""
+PRG_OVERRIDE=""
 
 #helper functions
 usage()
@@ -28,12 +29,13 @@ usage()
     echo "For instance, a necessary port might still be in use."
     echo "Note: there is no guarantee for this operations to be always successful."
     echo
-    echo "Usage: gaspi_cleanup -m <machinefile>"
+    echo "Usage: gaspi_cleanup -m <machinefile> [-p <program>]"
     echo "OR"
-    echo "gaspi_cleanup --machinefile <machinefile>"
+    echo "gaspi_cleanup --machinefile <machinefile> [--program <program>]"
     echo
     echo "Other options:"
     echo "   -c, --check       Only check if GASPI program is running on hosts."
+    echo "   -p, --program     Program name to kill (default: last run from /tmp/.last_gaspi_prg)."
     echo "   -h, --help        This help."
     echo
 }
@@ -41,12 +43,12 @@ usage()
 validate_machinefile()
 {
     #empty
-    if [ ! -s "$MFILE" ]; then
+    if [ ! -s "$1" ]; then
         echo "Empty machine file ($1)"
         exit 1
     fi
 
-    GASPI_HOSTS=$(uniq "$1")
+    GASPI_HOSTS=$(sort -u "$1")
 
     for i in $GASPI_HOSTS
     do
@@ -59,11 +61,12 @@ validate_machinefile()
 kill_procs()
 {
     GASPI_PRG=$(basename "$1")
-    GASPI_HOSTS=$(uniq "$2")
+    GASPI_HOSTS=$(sort -u "$2")
+    GASPI_USER=$(id -un)
 
     for i in $GASPI_HOSTS
     do
-        ssh "$i" killall -s KILL "$1" "$GASPI_PRG" lt-"$GASPI_PRG" > /dev/null 2>&1 &
+        { ssh -o ConnectTimeout=10 -o BatchMode=yes "$i" "pkill -KILL -x -u $GASPI_USER -- $GASPI_PRG; pkill -KILL -x -u $GASPI_USER -- lt-$GASPI_PRG; true" > /dev/null 2>&1 || echo "Warning: could not reach $i"; } &
     done
     wait
 }
@@ -71,15 +74,22 @@ kill_procs()
 check_gaspi_procs()
 {
     GASPI_PRG=$(basename "$1")
-    GASPI_HOSTS=$(uniq "$2")
+    GASPI_HOSTS=$(sort -u "$2")
+    GASPI_USER=$(id -un)
 
     for i in $GASPI_HOSTS
     do
-        if ssh "$i" "pgrep -x ${GASPI_PRG}  > /dev/null 2>&1"; then
-            echo ${GASPI_PRG} "running on ${i}"
+        if ssh -o ConnectTimeout=10 -o BatchMode=yes "$i" "pgrep -x -u $GASPI_USER -- $GASPI_PRG > /dev/null 2>&1"; then
+            echo "$GASPI_PRG running on $i"
         fi
     done
 }
+
+#handle --help before any other validation so it always works
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+    exit 0
+fi
 
 #at least we need machinefile
 if [ $# -lt 2 ]; then
@@ -87,11 +97,6 @@ if [ $# -lt 2 ]; then
     exit 1
 fi
 
-
-if [ "$PRG" = "" ]; then
-    echo "Error: GASPI application to cleanup not found."
-    exit 1
-fi
 
 check_only_option=0
 while [ "$1" != "" ]; do
@@ -103,6 +108,14 @@ while [ "$1" != "" ]; do
 	    usage
 	    exit 0
 	    ;;
+        -p | --program)
+            shift
+            if [ -z "$1" ]; then
+                echo "Error: -p requires a program name argument."
+                exit 1
+            fi
+            PRG_OVERRIDE=$1
+            ;;
         -m | --machinefile)
             shift
             if [ -r "$1" ]; then
@@ -124,10 +137,19 @@ while [ "$1" != "" ]; do
     shift
 done
 
+if [ -n "$PRG_OVERRIDE" ]; then
+    PRG="$PRG_OVERRIDE"
+elif [ -z "$PRG" ]; then
+    echo "Error: GASPI application to cleanup not found."
+    echo "Use -p <program> to specify the program name explicitly."
+    exit 1
+fi
+
+validate_machinefile "$MFILE"
+
 if [ $check_only_option = 1 ]; then
-    check_gaspi_procs $PRG $MFILE
+    check_gaspi_procs "$PRG" "$MFILE"
 else
-    validate_machinefile "$MFILE"
     kill_procs "$PRG" "$MFILE"
 fi
 

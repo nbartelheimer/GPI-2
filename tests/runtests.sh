@@ -175,6 +175,20 @@ if [ $TESTS_GO_FAST = 0 ] && [ $(($# - $opts_used)) = 0 ]; then
     fi
 fi
 
+# Run gaspi_cleanup unit tests (only when running full test suite)
+if [ $TESTS_GO_FAST = 0 ] && [ $(($# - $opts_used)) = 0 ]; then
+    GASPI_CLEANUP_TESTS="${RUNTESTS_DIR}/test_gaspi_cleanup/run_tests.sh"
+    if [ -x "$GASPI_CLEANUP_TESTS" ]; then
+        echo
+        echo "Running gaspi_cleanup unit tests..."
+        if ! "$GASPI_CLEANUP_TESTS"; then
+            echo "gaspi_cleanup unit tests failed. Aborting."
+            exit 1
+        fi
+        echo
+    fi
+fi
+
 #check machine file
 if [ ! -r $GPI2_TSUITE_MFILE ]; then
     echo
