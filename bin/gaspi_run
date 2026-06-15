@@ -170,16 +170,20 @@ validate_machinefile()
 	              print_error_exit_failure "User permissions failure: $PWD is not writable"
             }
 
-    # valid hostnames?
+    # valid hostnames or IP addresses?
     local hostname_regex='^([a-zA-Z0-9](-?[a-zA-Z0-9]){0,61}[a-zA-Z0-9])(\.[a-zA-Z]{2,})*$'
+    local ipv4_regex='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    local ipv6_regex='^[0-9a-fA-F:]{2,39}$'
     local count=0;
 
     while IFS= read -r line && [ "$count" -lt "$nhosts" ] ;
     do
 	      count=$((count+1))
 
-	      # Check if the line matches the hostname pattern
-	      if ! [[ $line =~ $hostname_regex ]]; then
+	      # Check if the line matches a hostname or IP address pattern
+	      if ! [[ $line =~ $hostname_regex ]] && \
+	         ! [[ $line =~ $ipv4_regex ]] && \
+	         ! [[ $line =~ $ipv6_regex ]]; then
 	          print_error_exit_failure "Invalid hostname ($line) in file $1"
 	      fi
 
@@ -409,7 +413,10 @@ if [ "$first_hostname" != "$hn" ]; then
     chmod a+r "$GPI2_MFILE" > /dev/null 2>&1
     TMP_FILE=$(readlink -f "$GPI2_MFILE")
     GPI2_MFILE=$TMP_FILE
-    if ! scp "$GPI2_MFILE" "${first_hostname}":"${GPI2_MFILE}" > /dev/null 2>&1 ; then
+    # SCP uses colon as host:path separator, so IPv6 addresses must be bracketed.
+    scp_host="${first_hostname}"
+    if [[ "${scp_host}" =~ : ]]; then scp_host="[${scp_host}]"; fi
+    if ! scp "$GPI2_MFILE" "${scp_host}":"${GPI2_MFILE}" > /dev/null 2>&1 ; then
 	      echo "Warning: Failed to copy machinefile to remote host. Program might not start correctly."
     fi
 
