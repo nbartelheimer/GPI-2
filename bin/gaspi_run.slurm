@@ -139,13 +139,13 @@ while [ -n "$1" ]; do
 	    print_error_exit_failure "Invalid option ($1). Use -h (or --help) for available options."
 	    ;;
 	*)
-	    # Try to see if it is an executable found on the PATH
+	    # 'which ./bin/foo' returns the relative path unchanged, so always
+	    # absolutize with readlink -f (srun launches tasks from $HOME).
 	    FULLPATH=$(which "$1" 2> /dev/null)
-	    # If this did not turn up anything, try to convert the argument to a full path
 	    if [ -z "$FULLPATH" ]; then
-	      FULLPATH=$(readlink -f "$1")
+	      FULLPATH="$1"
 	    fi
-	    # Finally, check if we find an executable file at the location
+	    FULLPATH=$(readlink -f "$FULLPATH")
 	    if [ -f "$FULLPATH" ]; then
 		if [ -x "$FULLPATH" ]; then
 		    GPI2_PRG="$FULLPATH"

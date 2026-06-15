@@ -71,6 +71,14 @@ run_gaspi_run() {
     "$TEST_BIN_DIR/gaspi_run" "$@" > "$TEST_STDOUT" 2> "$TEST_STDERR" || TEST_EXIT=$?
 }
 
+# Like run_gaspi_run, but launches from <dir> so relative program paths
+# (e.g. ./test_app.sh) resolve against a known working directory.
+run_gaspi_run_in_dir() {
+    local dir="$1"; shift
+    TEST_EXIT=0
+    ( cd "$dir" && "$TEST_BIN_DIR/gaspi_run" "$@" ) > "$TEST_STDOUT" 2> "$TEST_STDERR" || TEST_EXIT=$?
+}
+
 assert_exit_code() {
     local expected=$1
     if [ "$TEST_EXIT" -ne "$expected" ]; then
@@ -113,6 +121,16 @@ assert_mock_log_contains() {
     local pattern="$1"
     if ! grep -qF "$pattern" "$MOCK_LOG" 2>/dev/null; then
         fail "mock log missing: '$pattern'"
+        echo "  mock log was: $(cat "$MOCK_LOG" 2>/dev/null)"
+        return 1
+    fi
+    return 0
+}
+
+assert_mock_log_not_contains() {
+    local pattern="$1"
+    if grep -qF "$pattern" "$MOCK_LOG" 2>/dev/null; then
+        fail "mock log unexpectedly contains: '$pattern'"
         echo "  mock log was: $(cat "$MOCK_LOG" 2>/dev/null)"
         return 1
     fi
@@ -508,6 +526,37 @@ test_temp_files_cleaned_on_error() {
 }
 
 ######################################################################
+# Category 6: Program path resolution (3 tests)
+######################################################################
+
+test_relative_path_absolutized_remote() {
+    # Regression: 'which ./foo' echoes the relative path back unchanged, so a
+    # relative program path must be absolutized before it reaches remote ranks
+    # (their ssh CWD is $HOME, not the launch dir).
+    run_gaspi_run_in_dir "$FIXTURE_DIR" -m "$MF_REMOTE" ./test_app.sh
+    assert_exit_code 0 &&
+    assert_mock_log_contains "$FIXTURE_DIR/test_app.sh" &&
+    assert_mock_log_not_contains "./test_app.sh"
+}
+
+test_relative_path_local() {
+    # A relative path must still launch correctly on the local host.
+    run_gaspi_run_in_dir "$FIXTURE_DIR" -m "$MF_LOCAL" ./test_app.sh
+    assert_exit_code 0 &&
+    assert_output_contains "argc=1"
+}
+
+test_path_command_name_remote() {
+    # A bare command found on PATH must still be resolved to an absolute path
+    # for remote ranks (the feature this whole code path was added for).
+    TEST_EXIT=0
+    ( export PATH="$FIXTURE_DIR:$PATH"; "$TEST_BIN_DIR/gaspi_run" -m "$MF_REMOTE" test_app.sh ) \
+        > "$TEST_STDOUT" 2> "$TEST_STDERR" || TEST_EXIT=$?
+    assert_exit_code 0 &&
+    assert_mock_log_contains "$FIXTURE_DIR/test_app.sh"
+}
+
+######################################################################
 # Main
 ######################################################################
 
@@ -585,6 +634,13 @@ echo "--- Cleanup and exit codes ---"
 run_test test_exit_success
 run_test test_exit_failure_on_app_error
 run_test test_temp_files_cleaned_on_error
+
+# Category 6: Program path resolution
+echo
+echo "--- Program path resolution ---"
+run_test test_relative_path_absolutized_remote
+run_test test_relative_path_local
+run_test test_path_command_name_remote
 
 # Summary
 echo
