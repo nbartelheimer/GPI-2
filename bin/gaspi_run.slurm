@@ -212,11 +212,17 @@ if [ "$GPI2_NTASKS" -ne 0 ]; then
 	print_error_exit_failure "Number of requested tasks (-n) exceeds available/provided resources."
     fi
     head -n "$GPI2_NTASKS" "$GPI2_MFILE" > "$TMP_MFILE"
-    cat "$TMP_MFILE" > "$GPI2_MFILE"
+    # Use the truncated copy rather than overwriting the user's machine file.
+    GPI2_MFILE="$TMP_MFILE"
     uniq "$GPI2_MFILE" > "$UNIQ_MFILE"
 fi
 
 GPI2_NTASKS=$(wc -l "$GPI2_MFILE" | cut -d' ' -f1)
+
+# Reject an empty machine file up front
+if [ "$GPI2_NTASKS" -eq 0 ]; then
+    print_error_exit_failure "Machine file is empty (no hosts to run on)."
+fi
 
 if [ "$GPI2_NTASKS" -gt "$SLURM_NTASKS" ]; then
     print_error_exit_failure "Resources requested (${GPI2_NTASKS}) exceeds the Slurm job's allocation (${SLURM_NTASKS})."

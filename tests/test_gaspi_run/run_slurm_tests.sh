@@ -121,6 +121,15 @@ assert_no_temp_files() {
     return 0
 }
 
+assert_machinefile_unchanged() {
+    local file="$1" expected="$2"
+    if [ "$(cat "$file")" != "$expected" ]; then
+        fail "machine file was modified: $file"
+        return 1
+    fi
+    return 0
+}
+
 current_test=""
 
 run_test() {
@@ -219,6 +228,17 @@ test_m_and_n_exact() {
     assert_mock_log_contains "MOCK_SRUN args=-n 3"
 }
 
+test_n_preserves_machinefile() {
+    # Regression: -n truncation must not overwrite the user's machine file.
+    export SLURM_NTASKS=3 SLURM_NPROCS=3
+    local before
+    before=$(cat "$MF3")
+    run_slurm -m "$MF3" -n 2 "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "MOCK_SRUN args=-n 2" &&
+    assert_machinefile_unchanged "$MF3" "$before"
+}
+
 ######################################################################
 # Category 3: Option interactions
 ######################################################################
@@ -308,6 +328,18 @@ test_error_nonexistent_machinefile() {
     assert_output_contains "Cannot read"
 }
 
+test_error_empty_machinefile() {
+    # An empty machine file must fail cleanly (no division-by-zero crash) and
+    # leave no temp files behind.
+    local emptyfile
+    emptyfile=$(mktemp /tmp/gaspi_slurm_empty.XXXXXX)
+    run_slurm -m "$emptyfile" "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 1 &&
+    assert_output_contains "Machine file is empty" &&
+    assert_no_temp_files
+    rm -f "$emptyfile"
+}
+
 test_error_invalid_option() {
     run_slurm -z "$FIXTURE_DIR/test_app.sh"
     assert_exit_code 1 &&
@@ -387,6 +419,7 @@ run_test test_machinefile_only
 run_test test_auto_machinefile
 run_test test_m_and_n_truncate
 run_test test_m_and_n_exact
+run_test test_n_preserves_machinefile
 
 echo
 echo "--- Option interactions ---"
@@ -408,6 +441,7 @@ run_test test_error_no_binary
 run_test test_error_nonexistent_binary
 run_test test_error_nonexecutable_binary
 run_test test_error_nonexistent_machinefile
+run_test test_error_empty_machinefile
 run_test test_error_invalid_option
 run_test test_error_n_nonnumeric
 run_test test_error_n_exceeds_resources
