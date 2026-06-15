@@ -164,72 +164,160 @@ _gaspi_check_set_ofile_limit (void)
   return 0;
 }
 
+/*
+ * Create a dual-stack (AF_INET6 / IPV6_V6ONLY=0) listen socket bound to all
+ * interfaces on the given port. If the kernel has dual-stack disabled
+ * (net.ipv6.bindv6only=1 sysctl), a warning is printed and the function falls
+ * back to an IPv4-only socket. Returns the listening fd, or GPI2_SN_ERROR on
+ * failure.
+ */
+static int
+gaspi_sn_create_listen_socket (int port)
+{
+  int lsock = socket (AF_INET6, SOCK_STREAM, 0);
+
+  if (lsock >= 0 && gaspi_sn_set_default_opts (lsock) != 0)
+  {
+    close (lsock);
+    lsock = -1;
+  }
+
+  if (lsock >= 0)
+  {
+    /* Request dual-stack: accept both IPv4 and IPv6 clients on one socket */
+    int zero = 0;
+    setsockopt (lsock, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof (zero));
+
+    /* Verify — sysctl net.ipv6.bindv6only=1 silently ignores the call above */
+    int val = 1;
+    socklen_t vlen = sizeof (val);
+    getsockopt (lsock, IPPROTO_IPV6, IPV6_V6ONLY, &val, &vlen);
+
+    if (val != 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR
+        ("IPv6 dual-stack unavailable (IPV6_V6ONLY forced by sysctl); "
+         "falling back to IPv4.");
+      close (lsock);
+      lsock = -1;
+    }
+  }
+
+  if (lsock >= 0)
+  {
+    struct sockaddr_in6 addr;
+    memset (&addr, 0, sizeof (addr));
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port   = htons (port);
+    addr.sin6_addr   = in6addr_any;
+
+    if (bind (lsock, (struct sockaddr *) &addr, sizeof (addr)) < 0
+        || listen (lsock, SOMAXCONN) < 0)
+    {
+      close (lsock);
+      lsock = -1;
+    }
+  }
+
+  if (lsock >= 0)
+  {
+    return lsock;
+  }
+
+  /* IPv4 fallback */
+  lsock = socket (AF_INET, SOCK_STREAM, 0);
+  if (lsock < 0)
+  {
+    return GPI2_SN_ERROR;
+  }
+
+  if (gaspi_sn_set_default_opts (lsock) != 0)
+  {
+    close (lsock);
+    return GPI2_SN_ERROR;
+  }
+
+  struct sockaddr_in addr4;
+  memset (&addr4, 0, sizeof (addr4));
+  addr4.sin_family      = AF_INET;
+  addr4.sin_port        = htons (port);
+  addr4.sin_addr.s_addr = htonl (INADDR_ANY);
+
+  if (bind (lsock, (struct sockaddr *) &addr4, sizeof (addr4)) < 0
+      || listen (lsock, SOMAXCONN) < 0)
+  {
+    close (lsock);
+    return GPI2_SN_ERROR;
+  }
+
+  return lsock;
+}
+
 static int
 gaspi_sn_connect2port_intern (const char *const hn, const unsigned short port)
 {
-  int ret;
+  char port_str[8];
+  snprintf (port_str, sizeof (port_str), "%hu", port);
+
+  struct addrinfo hints;
+  memset (&hints, 0, sizeof (hints));
+  hints.ai_family   = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+
+  struct addrinfo *results;
+  if (getaddrinfo (hn, port_str, &hints, &results) != 0)
+  {
+    return GPI2_SN_ERROR;
+  }
+
   int sockfd = -1;
 
-  struct sockaddr_in host;
-  struct hostent *server_data;
-
-  sockfd = socket (AF_INET, SOCK_STREAM, 0);
-  if (-1 == sockfd)
+  for (struct addrinfo *r = results; r != NULL; r = r->ai_next)
   {
-    /* at least deal with open files limit */
-    int errsv = errno;
-
-    if (errsv == EMFILE)
+    sockfd = socket (r->ai_family, r->ai_socktype, r->ai_protocol);
+    if (sockfd < 0)
     {
-      if (0 == _gaspi_check_set_ofile_limit())
+      if (errno == EMFILE)
       {
-        sockfd = socket (AF_INET, SOCK_STREAM, 0);
-        if (sockfd == -1)
+        if (0 == _gaspi_check_set_ofile_limit ())
         {
-          /* still erroneous */
-          return GPI2_SN_ERROR;
+          sockfd = socket (r->ai_family, r->ai_socktype, r->ai_protocol);
+        }
+        if (sockfd < 0)
+        {
+          freeaddrinfo (results);
+          return GPI2_SN_EMFILE;
         }
       }
-      else /* failed to check/set ofile limit */
+      else
       {
-        return GPI2_SN_EMFILE;
+        continue;
       }
     }
-    else
+
+    /* TODO: we need to be able to distinguish between an initialization
+       connection attempt and a connection attempt during run-time where
+       the remote node is gone (FT) */
+    if (connect (sockfd, r->ai_addr, r->ai_addrlen) == 0)
     {
-      return GPI2_SN_ERROR;
+      if (gaspi_sn_set_default_opts (sockfd) != 0)
+      {
+        GASPI_DEBUG_PRINT_ERROR ("Failed to set options on socket.");
+        close (sockfd);
+        sockfd = -1;
+        continue;
+      }
+
+      freeaddrinfo (results);
+      return sockfd;
     }
-  }
 
-  host.sin_family = AF_INET;
-  host.sin_port = htons (port);
-
-  if ((server_data = gethostbyname (hn)) == NULL)
-  {
     close (sockfd);
-    return GPI2_SN_ERROR;
+    sockfd = -1;
   }
 
-  memcpy (&host.sin_addr, server_data->h_addr, server_data->h_length);
-
-  /* TODO: we need to be able to distinguish between an initialization
-     connection attemp and a connection attempt during run-time where
-     the remote node is gone (FT) */
-  ret = connect (sockfd, (struct sockaddr *) &host, sizeof (host));
-  if (0 != ret)
-  {
-    close (sockfd);
-    return GPI2_SN_ERROR;
-  }
-
-  if (0 != gaspi_sn_set_default_opts (sockfd))
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to set options on socket.");
-    close (sockfd);
-    return GPI2_SN_ERROR;
-  }
-
-  return sockfd;
+  freeaddrinfo (results);
+  return GPI2_SN_ERROR;
 }
 
 int
@@ -354,41 +442,13 @@ static int
 _gaspi_sn_wait_connection (int port, gaspi_timeout_t timeout_ms)
 {
   struct sockaddr in_addr;
-  struct sockaddr_in listeningAddress;
   socklen_t in_len = sizeof (in_addr);
 
-  int lsock = socket (AF_INET, SOCK_STREAM, 0);
-
+  int lsock = gaspi_sn_create_listen_socket (port);
   if (lsock < 0)
   {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to create socket.");
-    return GPI2_SN_ERROR;
-  }
-
-  if (0 != gaspi_sn_set_default_opts (lsock))
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to set socket opts.");
-    close (lsock);
-    return GPI2_SN_ERROR;
-  }
-
-  listeningAddress.sin_family = AF_INET;
-  listeningAddress.sin_port = htons (port);
-  listeningAddress.sin_addr.s_addr = htonl (INADDR_ANY);
-
-  if (bind
-      (lsock, (struct sockaddr *) (&listeningAddress),
-       sizeof (listeningAddress)) < 0)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to bind socket %d", port);
-    close (lsock);
-    return GPI2_SN_ERROR;
-  }
-
-  if (listen (lsock, SOMAXCONN) < 0)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to listen on socket");
-    close (lsock);
+    GASPI_DEBUG_PRINT_ERROR ("Failed to create listen socket on port %d.",
+                             port);
     return GPI2_SN_ERROR;
   }
 
@@ -1381,50 +1441,21 @@ gaspi_sn_backend (void* GASPI_UNUSED (args))
     GASPI_DELAY();
   }
 
-  lsock = socket (AF_INET, SOCK_STREAM, 0);
+  lsock = gaspi_sn_create_listen_socket (gctx->config->sn_port
+                                         + gctx->local_rank);
   if (lsock < 0)
   {
     gaspi_sn_fatal_error (-1, GASPI_SN_STATE_ERROR,
-                          "Failed to create socket.");
-    return NULL;
-  }
-
-  if (0 != gaspi_sn_set_default_opts (lsock))
-  {
-    gaspi_sn_fatal_error (lsock, GASPI_SN_STATE_ERROR,
-                          "Failed to modify socket.");
+                          "Failed to create listen socket.");
     return NULL;
   }
 
   signal (SIGPIPE, SIG_IGN);
 
-  struct sockaddr_in listeningAddress;
-
-  listeningAddress.sin_family = AF_INET;
-  listeningAddress.sin_port =
-    htons ((gctx->config->sn_port + gctx->local_rank));
-  listeningAddress.sin_addr.s_addr = htonl (INADDR_ANY);
-
-  if (bind
-      (lsock, (struct sockaddr *) (&listeningAddress),
-       sizeof (listeningAddress)) < 0)
-  {
-    gaspi_sn_fatal_error (lsock, GASPI_SN_STATE_ERROR,
-                          "Failed to bind to port.");
-    return NULL;
-  }
-
   if (0 != gaspi_sn_set_non_blocking (lsock))
   {
     gaspi_sn_fatal_error (lsock, GASPI_SN_STATE_ERROR,
                           "Failed to set socket options.");
-    return NULL;
-  }
-
-  if (listen (lsock, gctx->tnc) < 0)
-  {
-    gaspi_sn_fatal_error (lsock, GASPI_SN_STATE_ERROR,
-                          "Failed to listen on socket.");
     return NULL;
   }
 
