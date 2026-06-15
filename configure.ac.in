@@ -76,7 +76,13 @@ AC_PROG_MAKE_SET
 AC_CHECK_LIB([m], [sqrt])
 
 # CHECKS FOR HEADER FILES.
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h float.h netdb.h netinet/in.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h sys/timeb.h unistd.h sys/signal.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h float.h netdb.h netinet/in.h netinet/in6.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h sys/timeb.h sys/un.h unistd.h sys/signal.h])
+
+# IPv6 support: check that IPV6_V6ONLY is available.
+AC_CHECK_DECL([IPV6_V6ONLY],
+  [],
+  [AC_MSG_WARN([IPV6_V6ONLY not declared; IPv6 dual-stack will fall back to IPv4.])],
+  [[#include <netinet/in.h>]])
 
 # CHECKS FOR TYPEDEFS, STRUCTURES, AND COMPILER CHARACTERISTICS.
 AC_C_INLINE
@@ -93,7 +99,7 @@ AC_TYPE_UINT8_T
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_MALLOC
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([ftime ftruncate gethostbyname gethostname gettimeofday inet_ntoa memmove memset pow select socket sqrt strerror strtol uname mktemp])
+AC_CHECK_FUNCS([ftime ftruncate gethostname gettimeofday inet_ntoa inet_ntop getaddrinfo memmove memset pow select socket sqrt strerror strtol uname mktemp])
 
 # DEFAULT INFOS
 options=
