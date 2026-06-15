@@ -198,6 +198,10 @@ int tcp_dev_connect_to (const int i, char const *const host, const int port);
 
 char *tcp_dev_get_local_ip (char const *const host);
 
+const char *tcp_dev_get_unix_path (void);
+
+int tcp_dev_connect_unix (const char *path);
+
 char *tcp_dev_get_local_if (char *ip);
 
 gaspi_tcp_dev_status_t gaspi_tcp_dev_status_get (void);

@@ -25,6 +25,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/tcp.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include "GASPI_types.h"
 #include "GPI2_SN.h"
@@ -49,6 +51,56 @@ static int tcp_dev_port_in_use;
 static int tcp_dev_num_peers;
 static int tcp_dev_id;
 pthread_t tcp_dev_thread;
+
+/* Abstract-namespace Unix path for self-connections.
+ * Populated by tcp_virt_dev before self-connections are made. */
+#define TCP_DEV_UNIX_PATH_LEN 108
+static char tcp_dev_unix_path_buf[TCP_DEV_UNIX_PATH_LEN];
+
+/* Fill an abstract-namespace path for a given port number.
+ * path[0] == '\0' signals abstract namespace; rest is the name. */
+static void
+tcp_dev_unix_path (char path[TCP_DEV_UNIX_PATH_LEN], int port)
+{
+  memset (path, 0, TCP_DEV_UNIX_PATH_LEN);
+  snprintf (path + 1, TCP_DEV_UNIX_PATH_LEN - 1, "gpi2-tcp-%d", port);
+}
+
+/* Connect to an AF_UNIX abstract-namespace socket.
+ * Returns the connected fd, or -1 on error. */
+int
+tcp_dev_connect_unix (const char *path)
+{
+  int sock = socket (AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0)
+  {
+    return -1;
+  }
+
+  struct sockaddr_un addr;
+  memset (&addr, 0, sizeof (addr));
+  addr.sun_family = AF_UNIX;
+  memcpy (addr.sun_path, path, TCP_DEV_UNIX_PATH_LEN);
+
+  socklen_t addrlen = (socklen_t) (offsetof (struct sockaddr_un, sun_path)
+                                   + 1 + strlen (path + 1));
+
+  if (connect (sock, (struct sockaddr *) &addr, addrlen) < 0)
+  {
+    close (sock);
+    return -1;
+  }
+
+  return sock;
+}
+
+/* Return a pointer to the module-level Unix path buffer.
+ * Valid after tcp_virt_dev has initialised tcp_dev_unix_path_buf. */
+const char *
+tcp_dev_get_unix_path (void)
+{
+  return tcp_dev_unix_path_buf;
+}
 
 /* list of remote operations */
 list delayedList =
@@ -225,11 +277,11 @@ tcp_dev_create_queue (struct tcp_cq *send_cq, struct tcp_cq *recv_cq)
     (struct tcp_queue *) malloc (sizeof (struct tcp_queue));
   if (q != NULL)
   {
-    handle =
-      gaspi_sn_connect2port ("localhost", tcp_dev_port_in_use, CONN_TIMEOUT);
+    handle = tcp_dev_connect_unix (tcp_dev_unix_path_buf);
 
     if (handle == -1)
     {
+      GASPI_DEBUG_PRINT_ERROR ("Failed to connect via Unix socket for queue.");
       free (q);
       return NULL;
     }
@@ -1597,9 +1649,44 @@ tcp_virt_dev (void *args)
     return NULL;
   }
 
+  /* AF_UNIX abstract-namespace listener for self-connections. Replaces
+   * "localhost":port TCP self-connects for queue creation and the passive
+   * channel, eliminating IPv4/IPv6 ambiguity on loopback. */
+  tcp_dev_unix_path (tcp_dev_unix_path_buf, tcp_dev_port_in_use);
+
+  int unix_sock = socket (AF_UNIX, SOCK_STREAM, 0);
+  if (unix_sock < 0)
+  {
+    close (listen_sock);
+    GASPI_DEBUG_PRINT_ERROR ("Failed to create Unix socket.");
+    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+    return NULL;
+  }
+
+  {
+    struct sockaddr_un uaddr;
+    memset (&uaddr, 0, sizeof (uaddr));
+    uaddr.sun_family = AF_UNIX;
+    memcpy (uaddr.sun_path, tcp_dev_unix_path_buf, TCP_DEV_UNIX_PATH_LEN);
+    socklen_t ulen = (socklen_t) (offsetof (struct sockaddr_un, sun_path)
+                                  + 1 + strlen (tcp_dev_unix_path_buf + 1));
+    if (bind (unix_sock, (struct sockaddr *) &uaddr, ulen) < 0
+        || listen (unix_sock, SOMAXCONN) < 0)
+    {
+      close (unix_sock);
+      close (listen_sock);
+      GASPI_DEBUG_PRINT_ERROR ("Failed to bind/listen Unix socket.");
+      gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+      return NULL;
+    }
+  }
+
+  gaspi_sn_set_non_blocking (unix_sock);
+
   epollfd = epoll_create (MAX_EVENTS);
   if (epollfd == -1)
   {
+    close (unix_sock);
     close (listen_sock);
     GASPI_DEBUG_PRINT_ERROR ("Failed to create events instance.");
     gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
@@ -1610,6 +1697,7 @@ tcp_virt_dev (void *args)
 
   if (lstate == NULL)
   {
+    close (unix_sock);
     close (listen_sock);
     close (epollfd);
     GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
@@ -1627,7 +1715,34 @@ tcp_virt_dev (void *args)
 
   if (epoll_ctl (epollfd, EPOLL_CTL_ADD, listen_sock, &lev) < 0)
   {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to add socket to event instance.");
+    GASPI_DEBUG_PRINT_ERROR ("Failed to add TCP socket to event instance.");
+    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+    return NULL;
+  }
+
+  tcp_dev_conn_state_t *lstate_unix = malloc (sizeof (tcp_dev_conn_state_t));
+
+  if (lstate_unix == NULL)
+  {
+    close (unix_sock);
+    close (listen_sock);
+    close (epollfd);
+    GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
+    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+    return NULL;
+  }
+
+  lstate_unix->fd = unix_sock;
+  lstate_unix->rank = -2;
+
+  struct epoll_event ulev = {
+    .data.ptr = lstate_unix,
+    .events = EPOLLIN | EPOLLRDHUP
+  };
+
+  if (epoll_ctl (epollfd, EPOLL_CTL_ADD, unix_sock, &ulev) < 0)
+  {
+    GASPI_DEBUG_PRINT_ERROR ("Failed to add Unix socket to event instance.");
     gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
     return NULL;
   }
@@ -1705,7 +1820,7 @@ tcp_virt_dev (void *args)
         io_err = 1;
       }
 
-      /* new incoming connection */
+      /* new incoming TCP connection from remote peer */
       else if (event_fd == listen_sock)
       {
         while (1)
@@ -1733,6 +1848,38 @@ tcp_virt_dev (void *args)
             close (conn_sock);
             GASPI_DEBUG_PRINT_ERROR
               ("Failed to add connection to events instance");
+          }
+        }
+        continue;
+      }
+      /* new self-connection via Unix socket (queue creation / passive ch.) */
+      else if (event_fd == unix_sock)
+      {
+        while (1)
+        {
+          struct sockaddr_un peer;
+          socklen_t plen = sizeof (peer);
+
+          int conn_sock =
+            accept (unix_sock, (struct sockaddr *) &peer, &plen);
+          if (conn_sock < 0)
+          {
+            if (errno == EAGAIN)
+            {
+              break;
+            }
+
+            GASPI_DEBUG_PRINT_ERROR ("Failed to accept Unix connection.");
+            continue;
+          }
+
+          gaspi_sn_set_non_blocking (conn_sock);
+
+          if (_tcp_dev_add_new_conn (-1, conn_sock, epollfd) == NULL)
+          {
+            close (conn_sock);
+            GASPI_DEBUG_PRINT_ERROR
+              ("Failed to add Unix connection to events instance");
           }
         }
         continue;
