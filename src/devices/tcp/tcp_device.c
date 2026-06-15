@@ -372,12 +372,11 @@ char *
 tcp_dev_get_local_ip (char const *const host)
 {
   struct addrinfo hints, *res;
-  struct in_addr addr;
   int err;
 
   memset (&hints, 0, sizeof (hints));
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_UNSPEC;
 
   if ((err = getaddrinfo (host, NULL, &hints, &res)) != 0)
   {
@@ -385,11 +384,24 @@ tcp_dev_get_local_ip (char const *const host)
     return NULL;
   }
 
-  addr.s_addr = ((struct sockaddr_in *) (res->ai_addr))->sin_addr.s_addr;
+  static char ip_buf[INET6_ADDRSTRLEN];
+
+  if (res->ai_family == AF_INET6)
+  {
+    inet_ntop (AF_INET6,
+               &((struct sockaddr_in6 *) res->ai_addr)->sin6_addr,
+               ip_buf, sizeof (ip_buf));
+  }
+  else
+  {
+    inet_ntop (AF_INET,
+               &((struct sockaddr_in *) res->ai_addr)->sin_addr,
+               ip_buf, sizeof (ip_buf));
+  }
 
   freeaddrinfo (res);
 
-  return inet_ntoa (addr);
+  return ip_buf;
 }
 
 //TODO: ideally we would remove the need for argument i
@@ -1492,7 +1504,37 @@ tcp_virt_dev (void *args)
   tcp_dev_port_in_use = dev_args->port;
   tcp_dev_id = dev_args->id;
 
-  int listen_sock = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  /* try dual-stack AF_INET6 first; fall back to AF_INET if the kernel forces
+   * IPV6_V6ONLY (e.g. net.ipv6.bindv6only=1 sysctl). */
+  int use_inet6 = 1;
+  int listen_sock = socket (AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+
+  if (listen_sock >= 0)
+  {
+    int zero = 0;
+    setsockopt (listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof (zero));
+    int val = 1;
+    socklen_t vlen = sizeof (val);
+    getsockopt (listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &val, &vlen);
+    if (val != 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR (
+        "IPv6 dual-stack unavailable (IPV6_V6ONLY forced by sysctl); "
+        "falling back to IPv4.");
+      close (listen_sock);
+      listen_sock = -1;
+      use_inet6 = 0;
+    }
+  }
+  else
+  {
+    use_inet6 = 0;
+  }
+
+  if (listen_sock < 0)
+  {
+    listen_sock = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  }
 
   if (listen_sock < 0)
   {
@@ -1503,17 +1545,8 @@ tcp_virt_dev (void *args)
 
   int opt = 1;
 
-  if (setsockopt (listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof (opt)) <
-      0)
-  {
-    close (listen_sock);
-    GASPI_DEBUG_PRINT_ERROR ("Failed to modify socket.");
-    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
-    return NULL;
-  }
-
-  if (setsockopt (listen_sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof (opt)) <
-      0)
+  if (setsockopt (listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof (opt)) < 0
+      || setsockopt (listen_sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof (opt)) < 0)
   {
     close (listen_sock);
     GASPI_DEBUG_PRINT_ERROR ("Failed to modify socket.");
@@ -1523,21 +1556,35 @@ tcp_virt_dev (void *args)
 
   signal (SIGPIPE, SIG_IGN);
 
-  struct sockaddr_in listenAddr = {
-    .sin_family = AF_INET,
-    .sin_port = htons (tcp_dev_port_in_use),
-    .sin_addr.s_addr = htonl (INADDR_ANY)
-  };
-
-  if (bind
-      (listen_sock, (struct sockaddr *) (&listenAddr),
-       sizeof (listenAddr)) < 0)
+  if (use_inet6)
   {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to bind to port %d\n",
-                             tcp_dev_port_in_use);
-    close (listen_sock);
-    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
-    return NULL;
+    struct sockaddr_in6 addr6;
+    memset (&addr6, 0, sizeof (addr6));
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_port   = htons (tcp_dev_port_in_use);
+    addr6.sin6_addr   = in6addr_any;
+    if (bind (listen_sock, (struct sockaddr *) &addr6, sizeof (addr6)) < 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR ("Failed to bind to port %d", tcp_dev_port_in_use);
+      close (listen_sock);
+      gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+      return NULL;
+    }
+  }
+  else
+  {
+    struct sockaddr_in addr4;
+    memset (&addr4, 0, sizeof (addr4));
+    addr4.sin_family      = AF_INET;
+    addr4.sin_port        = htons (tcp_dev_port_in_use);
+    addr4.sin_addr.s_addr = htonl (INADDR_ANY);
+    if (bind (listen_sock, (struct sockaddr *) &addr4, sizeof (addr4)) < 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR ("Failed to bind to port %d", tcp_dev_port_in_use);
+      close (listen_sock);
+      gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+      return NULL;
+    }
   }
 
   gaspi_sn_set_non_blocking (listen_sock);
