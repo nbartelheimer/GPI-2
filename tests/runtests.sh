@@ -16,6 +16,12 @@ LOG_FILE=runtests_$(date -Idate).log
 
 MAX_TIME=1200
 
+SETSID=$(command -v setsid 2>/dev/null)
+SELF_PGID=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+TIMEOUT_FLAG=$(mktemp /tmp/.gpi2_timeout.XXXXXX 2>/dev/null || echo /tmp/.gpi2_timeout.$$)
+rm -f "$TIMEOUT_FLAG"
+KILL_TARGET=""
+
 #Functions
 usage()
 {
@@ -40,6 +46,14 @@ exit_timeout()
     echo "Stop this program"
 
     trap - TERM INT QUIT
+    # Tear down the in-flight test's process group (gaspi_run + ranks) before
+    # the by-name sweep, so locally-spawned ranks don't linger holding their
+    # ports.
+    if [ -n "$KILL_TARGET" ]; then
+	      kill -TERM $KILL_TARGET 2>/dev/null
+	      sleep 1
+	      kill -KILL $KILL_TARGET 2>/dev/null
+    fi
     $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
     kill -9 $TPID > /dev/null 2>&1
     killall -9 sleep > /dev/null 2>&1
@@ -60,38 +74,56 @@ run_test()
     #check definitions file for particular test
     F="${TEST_NAME%.*}"
     if [ -r ${RUNTESTS_DIR}/defs/${F}.def ]; then
-	printf "%51s: " "$TEST_NAME [${F}.def]"
-	SKIP=`gawk '/SKIP/{print 1}' ${RUNTESTS_DIR}/defs/${F}.def`
-	if [ -n "$SKIP" ]; then
-	    printf '\033[34m'"SKIPPED\n"
-	    TESTS_SKIPPED=$((TESTS_SKIPPED+1))
+	      printf "%51s: " "$TEST_NAME [${F}.def]"
+	      SKIP=`gawk '/SKIP/{print 1}' ${RUNTESTS_DIR}/defs/${F}.def`
+	      if [ -n "$SKIP" ]; then
+	          printf '\033[34m'"SKIPPED\n"
+	          TESTS_SKIPPED=$((TESTS_SKIPPED+1))
 
             reset_terminal
-	    return
-	fi
+	          return
+	      fi
 
-	TEST_ARGS=`gawk 'BEGIN{FS="="} /ARGS/{print $2}' ${RUNTESTS_DIR}/defs/${F}.def`
+	      TEST_ARGS=`gawk 'BEGIN{FS="="} /ARGS/{print $2}' ${RUNTESTS_DIR}/defs/${F}.def`
     else
         #check default definitions file
-	if [ -r ${RUNTESTS_DIR}/defs/default.def ]; then
-	    printf "%51s: " "$TEST_NAME [default.def]"
+	      if [ -r ${RUNTESTS_DIR}/defs/default.def ]; then
+	          printf "%51s: " "$TEST_NAME [default.def]"
 
-	    TEST_ARGS=`gawk 'BEGIN{FS="="} /NETWORK/{print $2}' ${RUNTESTS_DIR}/defs/default.def`
-	    TEST_ARGS="$TEST_ARGS "" `gawk 'BEGIN{FS="="} /TOPOLOGY/{print $2}' ${RUNTESTS_DIR}/defs/default.def`"
-	    TEST_ARGS="$TEST_ARGS "" `gawk 'BEGIN{FS="="} /SN_PERSISTENT/{print $2}' ${RUNTESTS_DIR}/defs/default.def`"
-	else
-	    printf "%51s: " "$TEST_NAME"
-	fi
+	          TEST_ARGS=`gawk 'BEGIN{FS="="} /NETWORK/{print $2}' ${RUNTESTS_DIR}/defs/default.def`
+	          TEST_ARGS="$TEST_ARGS "" `gawk 'BEGIN{FS="="} /TOPOLOGY/{print $2}' ${RUNTESTS_DIR}/defs/default.def`"
+	          TEST_ARGS="$TEST_ARGS "" `gawk 'BEGIN{FS="="} /SN_PERSISTENT/{print $2}' ${RUNTESTS_DIR}/defs/default.def`"
+	      else
+	          printf "%51s: " "$TEST_NAME"
+	      fi
     fi
 
-    echo "=================================== $1 ===================================" >> $LOG_FILE 2>&1 &
-    $GASPI_RUN -m ${GPI2_TSUITE_MFILE} $1 $TEST_ARGS >> $LOG_FILE 2>&1 &
+    echo "=================================== $1 ===================================" >> $LOG_FILE 2>&1
+
+    # Launch the test in its own session/process group (setsid) so the whole
+    # rank tree can be signalled as a unit. Killing gaspi_run alone orphaned the
+    # ranks, which kept holding their fixed ports
+    $SETSID $GASPI_RUN -m ${GPI2_TSUITE_MFILE} $1 $TEST_ARGS >> $LOG_FILE 2>&1 &
     PID=$!
 
-    TIMEDOUT=0
+    PGID=$(ps -o pgid= -p "$PID" 2>/dev/null | tr -d ' ')
+    if [ -n "$PGID" ] && [ "$PGID" != "$SELF_PGID" ]; then
+	      KILL_TARGET="-$PGID"
+    else
+	      KILL_TARGET="$PID"
+    fi
 
-    export PID
-    (sleep $MAX_TIME; kill -9 $PID;) &
+    TIMEDOUT=0
+    rm -f "$TIMEOUT_FLAG"
+
+    # on timeout send SIGTERM to the group first,
+    (
+	      sleep $MAX_TIME
+	      : > "$TIMEOUT_FLAG"
+	      kill -TERM $KILL_TARGET 2>/dev/null
+	      sleep 2
+	      kill -KILL $KILL_TARGET 2>/dev/null
+    ) &
     TPID=$!
 
     #wait test to finish
@@ -99,28 +131,30 @@ run_test()
 
     TEST_RESULT=$?
 
-    kill -0 "$TPID" 2>/dev/null || TIMEDOUT=1
+    [ -f "$TIMEOUT_FLAG" ] && TIMEDOUT=1
 
     if [ $TIMEDOUT = 1 ];then
-	TESTS_TIMEOUT=$(($TESTS_TIMEOUT+1))
-	printf '\033[33m'"TIMEOUT\n"
-	$GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
+	      TESTS_TIMEOUT=$(($TESTS_TIMEOUT+1))
+	      printf '\033[33m'"TIMEOUT\n"
+	      $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
     else
-	if [ $TEST_RESULT = 0 ]; then
-	    TESTS_PASS=$(($TESTS_PASS+1))
-	    printf '\033[32m'"PASSED\n"
-	else
-	    TESTS_FAIL=$(($TESTS_FAIL+1))
-	    printf '\033[31m'"FAILED\n"
-	    $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
-	fi
+	      if [ $TEST_RESULT = 0 ]; then
+	          TESTS_PASS=$(($TESTS_PASS+1))
+	          printf '\033[32m'"PASSED\n"
+	      else
+	          TESTS_FAIL=$(($TESTS_FAIL+1))
+	          printf '\033[31m'"FAILED\n"
+	          $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
+	      fi
     fi
 
     reset_terminal
 
     if [ $TIMEDOUT = 0 ];then
-	kill $TPID  > /dev/null 2>&1
+	      kill $TPID  > /dev/null 2>&1
     fi
+
+    KILL_TARGET=""
 }
 
 trap exit_timeout TERM INT QUIT
@@ -229,6 +263,7 @@ do
 done
 
 killall sleep 2>/dev/null
+rm -f "$TIMEOUT_FLAG"
 
 end_time=$(date +%s)
 printf "Run $NUM_TESTS tests:\n \
