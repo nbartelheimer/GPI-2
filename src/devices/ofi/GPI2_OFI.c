@@ -1084,7 +1084,8 @@ pgaspi_ofi_initialize (gaspi_context_t* gctx)
         GASPI_PRINT_WARNING ("Failed to create local fabric (ofi).");
       }
 
-      if (gctx->config->dev_config.params.ofi.provider_info)
+      if (gctx->config->dev_config.params.ofi.provider_info ||
+          gctx->config->net_info)
       {
         pgaspi_ofi_print_provider (ofi_ctx->fabric_ctx[1]);
       }
@@ -1104,7 +1105,8 @@ pgaspi_ofi_initialize (gaspi_context_t* gctx)
     return -1;
   }
 
-  if (gctx->config->dev_config.params.ofi.provider_info)
+  if (gctx->config->dev_config.params.ofi.provider_info ||
+      gctx->config->net_info)
   {
     pgaspi_ofi_print_provider (ofi_ctx->fabric_ctx[0]);
   }
