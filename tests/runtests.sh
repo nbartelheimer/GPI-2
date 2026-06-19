@@ -11,6 +11,7 @@ TESTS_FAIL=0
 TESTS_PASS=0
 TESTS_TIMEOUT=0
 TESTS_SKIPPED=0
+SHOW_TIME=0
 opts_used=0
 LOG_FILE=runtests_$(date -Idate).log
 
@@ -31,6 +32,7 @@ usage()
     echo "  -f                    Run fast (a sub-set of tests)."
     echo "  -m <machine_file>     Use machine_file as machine file."
     echo "  -o <output_file>      Log tests output to output_file."
+    echo "  -t, --time            Show the time (mm:ss) each test took."
     echo "  -h                    This help."
     echo
 
@@ -103,6 +105,7 @@ run_test()
     # Launch the test in its own session/process group (setsid) so the whole
     # rank tree can be signalled as a unit. Killing gaspi_run alone orphaned the
     # ranks, which kept holding their fixed ports
+    test_start=$(date +%s)
     $SETSID $GASPI_RUN -m ${GPI2_TSUITE_MFILE} $1 $TEST_ARGS >> $LOG_FILE 2>&1 &
     PID=$!
 
@@ -133,17 +136,24 @@ run_test()
 
     [ -f "$TIMEOUT_FLAG" ] && TIMEDOUT=1
 
+    test_end=$(date +%s)
+    test_elapsed=$((test_end - test_start))
+    TIME_STR=""
+    if [ $SHOW_TIME = 1 ]; then
+	      TIME_STR=$(printf " [%02d:%02d]" $((test_elapsed / 60)) $((test_elapsed % 60)))
+    fi
+
     if [ $TIMEDOUT = 1 ];then
 	      TESTS_TIMEOUT=$(($TESTS_TIMEOUT+1))
-	      printf '\033[33m'"TIMEOUT\n"
+	      printf '\033[33m'"TIMEOUT${TIME_STR}\n"
 	      $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
     else
 	      if [ $TEST_RESULT = 0 ]; then
 	          TESTS_PASS=$(($TESTS_PASS+1))
-	          printf '\033[32m'"PASSED\n"
+	          printf '\033[32m'"PASSED${TIME_STR}\n"
 	      else
 	          TESTS_FAIL=$(($TESTS_FAIL+1))
-	          printf '\033[31m'"FAILED\n"
+	          printf '\033[31m'"FAILED${TIME_STR}\n"
 	          $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
 	      fi
     fi
@@ -163,14 +173,24 @@ trap exit_timeout TERM INT QUIT
 
 start_time=$(date +%s)
 
+# Translate long options into the short forms understood by getopts.
+for arg do
+    shift
+    case "$arg" in
+	--time) set -- "$@" "-t" ;;
+	*)      set -- "$@" "$arg" ;;
+    esac
+done
+
 OPTERR=0
-while getopts "e:n:fm:o:h" option ; do
+while getopts "e:n:fm:o:ht" option ; do
     case $option in
 	e ) MAX_TIME=${OPTARG}; opts_used=$(($opts_used + 2));;
 	n ) GASPI_RUN="${GASPI_RUN} -n ${OPTARG}";opts_used=$(($opts_used + 2));;
 	f ) TESTS_GO_FAST=1;opts_used=$(($opts_used + 1));;
 	m ) GPI2_TSUITE_MFILE=`readlink -f ${OPTARG}`;opts_used=$(($opts_used + 2));;
 	o ) LOG_FILE=${OPTARG};opts_used=$(($opts_used + 2));;
+	t ) SHOW_TIME=1;opts_used=$(($opts_used + 1));;
         h ) usage; exit 0;;
 	\?) shift $(($OPTIND-2));echo;echo "Unknown option ($1)";usage;exit 1;;
     esac
