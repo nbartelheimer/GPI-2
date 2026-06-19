@@ -79,6 +79,7 @@ struct ofi_fabric
 
   uint32_t num_qC;
   struct ofi_queue** qC;
+  gaspi_lock_t qCQ_lock[GASPI_MAX_QP];   /* guards qC[q]->scq vs. progress thread */
   struct ofi_queue* qP;
   struct ofi_queue* qGroups;
   struct ofi_queue* qAtomic;

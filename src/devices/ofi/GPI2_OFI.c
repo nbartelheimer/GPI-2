@@ -27,6 +27,7 @@
 #include <rdma/fabric.h>
 
 #include "GPI2_OFI.h"
+#include "GPI2.h"          /* lock_gaspi / unlock_gaspi (gaspi_lock_t spinlock) */
 #include "GPI2_Sys.h"
 #include "GPI2_Utility.h"
 
@@ -314,13 +315,16 @@ pgaspi_ofi_progress_engine (void* arg)
     //progress on communication queues
     for (int q = 0; q < fabric_ctx->num_qC; q++)
     {
+      lock_gaspi (&fabric_ctx->qCQ_lock[q]);
       if (fabric_ctx->qC[q] == NULL || fabric_ctx->qC[q]->scq == NULL)
       {
+        unlock_gaspi (&fabric_ctx->qCQ_lock[q]);
         continue;
       }
 
       //TODO: += not quite the best approach
       err += pgaspi_ofi_make_progress_on_cq (fabric_ctx->qC[q]->scq);
+      unlock_gaspi (&fabric_ctx->qCQ_lock[q]);
     }
 
     //progress on atomic queue
@@ -645,6 +649,12 @@ pgaspi_ofi_create_queues (struct ofi_fabric* fabric_ctx,
     GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
 
     goto errL;
+  }
+
+  /* progress-engine locks start unlocked (fabric_ctx is malloc'd, not zeroed) */
+  for (gaspi_uint c = 0; c < GASPI_MAX_QP; c++)
+  {
+    fabric_ctx->qCQ_lock[c].lock = 0;
   }
 
   /* Create requested number of queues */
@@ -1470,9 +1480,11 @@ pgaspi_dev_fabric_comm_queue_delete (gaspi_context_t const * const gctx,
       }
     }
 
+    lock_gaspi (&fabric_ctx->qCQ_lock[q]);
     fabric_ctx->num_qC--;
     pgaspi_ofi_free_queue (fabric_ctx->qC[q]);
     fabric_ctx->qC[q] = NULL;
+    unlock_gaspi (&fabric_ctx->qCQ_lock[q]);
   }
 }
 
@@ -1509,8 +1521,9 @@ pgaspi_dev_comm_queue_create (gaspi_context_t const *const gctx,
   // only create queue/endpoint if not yet created
   if (NULL == fabric_ctx->qC[id])
   {
-    fabric_ctx->qC[id] = pgaspi_ofi_create_queue (fabric_ctx, RDMA, conf_q_max_size);
-    if (NULL == fabric_ctx->qC[id])
+    struct ofi_queue* nq =
+      pgaspi_ofi_create_queue (fabric_ctx, RDMA, conf_q_max_size);
+    if (NULL == nq)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to create queue (ofi).");
       return -1;
@@ -1518,7 +1531,10 @@ pgaspi_dev_comm_queue_create (gaspi_context_t const *const gctx,
 
    /* NOTE: this is currently important to add the new queue to the set
     * of queues considered by the progress engine */
+    lock_gaspi (&fabric_ctx->qCQ_lock[id]);
+    fabric_ctx->qC[id] = nq;
     fabric_ctx->num_qC++;
+    unlock_gaspi (&fabric_ctx->qCQ_lock[id]);
   }
 
   //get name of endpoint/queue for remote node
