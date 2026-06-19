@@ -48,6 +48,15 @@ AC_DEFUN([ACX_USABLE_DEVICE],[
         fi
         AM_CONDITIONAL([WITH_INFINIBAND],[test x${HAVE_INFINIBAND} = x1])
  	      AM_CONDITIONAL([WITH_INFINIBAND_EXT],[test x${HAVE_INFINIBAND_EXT} = x1 -a x$infiniband_ext != xno])
+
+	# Record the resolved device name so the test runner can match
+	# per-test XFAIL markers. Derived from the HAVE_* truth (not the
+	# --with-* request, which may differ after the IB->Ethernet fallback).
+	AS_IF([test x${HAVE_INFINIBAND} = x1], [GPI2_DEVICE_NAME=ib],
+	      [test x${HAVE_OFI} = x1],        [GPI2_DEVICE_NAME=ofi],
+	      [test x${HAVE_TCP} = x1],        [GPI2_DEVICE_NAME=tcp],
+	      [GPI2_DEVICE_NAME=unknown])
+	AC_SUBST([GPI2_DEVICE_NAME])
         if [test x${HAVE_INFINIBAND} = x1]; then
            if [test x${HAVE_INFINIBAND_EXT} = x1 -a x$infiniband_ext != xno]; then
               options="$options Infiniband Extensions"

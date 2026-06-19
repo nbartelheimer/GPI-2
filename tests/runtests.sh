@@ -11,7 +11,9 @@ TESTS_FAIL=0
 TESTS_PASS=0
 TESTS_TIMEOUT=0
 TESTS_SKIPPED=0
+TESTS_XFAIL=0
 SHOW_TIME=0
+ACTIVE_DEVICE=""
 opts_used=0
 LOG_FILE=runtests_$(date -Idate).log
 
@@ -43,6 +45,24 @@ reset_terminal()
     tput -T xterm sgr0
 }
 
+detect_device()
+{
+    if [ -r "${RUNTESTS_DIR}/defs/active_device" ]; then
+	      read d < "${RUNTESTS_DIR}/defs/active_device"
+	      if [ -n "$d" ]; then
+	          echo "$d"
+	          return
+	      fi
+    fi
+    if [ -r "${RUNTESTS_DIR}/defs/default.def" ]; then
+	      case "`gawk 'BEGIN{FS=\"=\"} /NETWORK/{print $2}' ${RUNTESTS_DIR}/defs/default.def`" in
+	          *IB*)       echo ib  ; return ;;
+	          *ETHERNET*) echo tcp ; return ;;
+	      esac
+    fi
+    echo unknown
+}
+
 exit_timeout()
 {
     echo "Stop this program"
@@ -72,6 +92,7 @@ run_test()
 {
     TEST_NAME=$(basename $1)
     TEST_ARGS=""
+    IS_XFAIL=0
 
     #check definitions file for particular test
     F="${TEST_NAME%.*}"
@@ -85,6 +106,15 @@ run_test()
             reset_terminal
 	          return
 	      fi
+
+	      # XFAIL=<dev>[,<dev>...] marks this test as expected to fail on the
+	      # listed device(s). Match against the resolved ACTIVE_DEVICE.
+	      XFAIL_DEVS=`gawk 'BEGIN{FS="="} /^XFAIL/{print $2}' ${RUNTESTS_DIR}/defs/${F}.def`
+	      for d in `echo "$XFAIL_DEVS" | tr ',' ' '`; do
+	          if [ "$d" = "$ACTIVE_DEVICE" ]; then
+	              IS_XFAIL=1
+	          fi
+	      done
 
 	      TEST_ARGS=`gawk 'BEGIN{FS="="} /ARGS/{print $2}' ${RUNTESTS_DIR}/defs/${F}.def`
     else
@@ -143,19 +173,36 @@ run_test()
 	      TIME_STR=$(printf " [%02d:%02d]" $((test_elapsed / 60)) $((test_elapsed % 60)))
     fi
 
-    if [ $TIMEDOUT = 1 ];then
+    # A test "did not pass" if it timed out or exited non-zero.
+    if [ $TIMEDOUT = 1 ] || [ $TEST_RESULT != 0 ]; then
+	      TEST_PASSED=0
+    else
+	      TEST_PASSED=1
+    fi
+
+    if [ $IS_XFAIL = 1 ]; then
+	      if [ $TEST_PASSED = 0 ]; then
+	          # Expected failure (a timeout counts): XFAILED, not a suite failure.
+	          TESTS_XFAIL=$(($TESTS_XFAIL+1))
+	          printf '\033[94m'"XFAILED${TIME_STR}\n"
+	          $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
+	      else
+	          # Unexpected pass: XPASS is treated as a failure so the stale
+	          # XFAIL marker gets noticed and removed.
+	          TESTS_FAIL=$(($TESTS_FAIL+1))
+	          printf '\033[31m'"XPASS${TIME_STR}\n"
+	      fi
+    elif [ $TIMEDOUT = 1 ];then
 	      TESTS_TIMEOUT=$(($TESTS_TIMEOUT+1))
 	      printf '\033[33m'"TIMEOUT${TIME_STR}\n"
 	      $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
+    elif [ $TEST_RESULT = 0 ]; then
+	      TESTS_PASS=$(($TESTS_PASS+1))
+	      printf '\033[32m'"PASSED${TIME_STR}\n"
     else
-	      if [ $TEST_RESULT = 0 ]; then
-	          TESTS_PASS=$(($TESTS_PASS+1))
-	          printf '\033[32m'"PASSED${TIME_STR}\n"
-	      else
-	          TESTS_FAIL=$(($TESTS_FAIL+1))
-	          printf '\033[31m'"FAILED${TIME_STR}\n"
-	          $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
-	      fi
+	      TESTS_FAIL=$(($TESTS_FAIL+1))
+	      printf '\033[31m'"FAILED${TIME_STR}\n"
+	      $GASPI_CLEAN -m ${GPI2_TSUITE_MFILE}
     fi
 
     reset_terminal
@@ -195,6 +242,10 @@ while getopts "e:n:fm:o:ht" option ; do
 	\?) shift $(($OPTIND-2));echo;echo "Unknown option ($1)";usage;exit 1;;
     esac
 done
+
+# Resolve the active device (fixed at configure time) for XFAIL matching.
+ACTIVE_DEVICE=$(detect_device)
+echo "Active device (for XFAIL): $ACTIVE_DEVICE"
 
 #go fast: quick overall check
 if [ $TESTS_GO_FAST = 1 ]; then
@@ -290,6 +341,7 @@ printf "Run $NUM_TESTS tests:\n \
 $TESTS_PASS passed\n \
 $TESTS_FAIL failed\n \
 $TESTS_TIMEOUT timed-out\n \
+$TESTS_XFAIL xfailed\n \
 $TESTS_SKIPPED skipped\nTimeout $MAX_TIME (secs)\n"
 
 elapsed_time=$((end_time - start_time))

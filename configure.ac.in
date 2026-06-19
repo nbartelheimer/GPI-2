@@ -36,6 +36,7 @@ AC_CONFIG_FILES([Makefile
 	src/Makefile
 	src/GPI2.pc
 	tests/Makefile
+	tests/defs/active_device
 	tests/tests/Makefile
 	tests/tests/atomic/Makefile
 	tests/tests/cm/Makefile
