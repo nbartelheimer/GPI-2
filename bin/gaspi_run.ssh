@@ -420,7 +420,7 @@ if [ "$first_hostname" != "$hn" ]; then
 	      echo "Warning: Failed to copy machinefile to remote host. Program might not start correctly."
     fi
 
-    local escaped_args=""
+    escaped_args=""
     if [ ${#GPI2_PRG_ARGS[@]} -gt 0 ]; then
 	      escaped_args=$(printf '%q ' "${GPI2_PRG_ARGS[@]}")
     fi
