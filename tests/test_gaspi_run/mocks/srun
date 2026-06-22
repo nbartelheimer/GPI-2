@@ -5,13 +5,28 @@
 # environment) and then runs the wrapper + binary locally so that env
 # propagation down to the GASPI process can be observed by the tests.
 
+# Capability probe: gaspi_run runs "srun --help" to check for --overlap support.
+# Advertise --overlap unless MOCK_SRUN_NO_OVERLAP is set (simulates Slurm < 20.11).
+case "$1" in
+    --help|-h)
+        echo "Usage: srun [OPTIONS] executable [args ...]"
+        if [ -z "${MOCK_SRUN_NO_OVERLAP:-}" ]; then
+            echo "      --overlap    allow steps to overlap with other steps"
+        fi
+        exit 0
+        ;;
+esac
+
 echo "MOCK_SRUN args=$* GASPI_TRACE=${GASPI_TRACE:-<unset>}" >> "$MOCK_LOG"
 
-# Strip the leading "-n N -N M" launcher flags; what remains is
-# "<wrapper> <mfile> <set_numa> <prg> [args...]" which we exec directly.
+# Strip the leading launcher flags ("-n N", "-N M", "--distribution=arbitrary",
+# "-m arbitrary"); what remains is "<wrapper> <mfile> <set_numa> <prg> [args...]"
+# which we exec directly.
 while [ $# -gt 0 ]; do
     case "$1" in
-        -n|-N) shift 2 ;;
+        -n|-N|-m) shift 2 ;;
+        --distribution=*|--overlap) shift ;;
+        --distribution) shift 2 ;;
         *) break ;;
     esac
 done

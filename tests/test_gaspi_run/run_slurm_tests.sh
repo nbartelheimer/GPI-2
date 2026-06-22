@@ -57,6 +57,14 @@ setup() {
     # GASPI_TRACE must not leak in from the caller's environment.
     unset GASPI_TRACE
 
+    # SLURM_STEP_ID must not leak in: it would trip the nested-step handling. It
+    # is set explicitly only by the nested-step tests.
+    unset SLURM_STEP_ID SLURM_STEPID
+    # The srun --overlap capability toggle is opt-in per test.
+    unset MOCK_SRUN_NO_OVERLAP
+    # SLURM_TASKS_PER_NODE is derived per-test; default to unset.
+    unset SLURM_TASKS_PER_NODE
+
     # Single-host machine file (1 task, 1 node).
     MF=$(mktemp /tmp/gaspi_slurm_mf.XXXXXX)
     printf '%s\n' "localhost" > "$MF"
@@ -68,9 +76,9 @@ setup() {
 
 teardown() {
     rm -f "$MOCK_LOG" "$TEST_STDOUT" "$TEST_STDERR" "$MF" "$MF3"
-    # machines_<jobid> is created in cwd by the auto-machinefile path; the
-    # launcher's own temp files live under /tmp/.gpi2.*.
-    rm -f machines_* /tmp/.gpi2.*
+    # The launcher's own temp files live under /tmp/.gpi2.*; the (mock) sbcast
+    # broadcast copy is /tmp/gaspi.mfile.*.
+    rm -f machines_* /tmp/.gpi2.* /tmp/gaspi.mfile.*
 }
 
 ######################################################################
@@ -104,6 +112,16 @@ assert_output_contains() {
     if ! grep -qF -- "$pattern" "$TEST_STDOUT"; then
         fail "stdout missing: '$pattern'"
         echo "  stdout was: $(cat "$TEST_STDOUT")"
+        return 1
+    fi
+    return 0
+}
+
+assert_stderr_contains() {
+    local pattern="$1"
+    if ! grep -qF -- "$pattern" "$TEST_STDERR"; then
+        fail "stderr missing: '$pattern'"
+        echo "  stderr was: $(cat "$TEST_STDERR")"
         return 1
     fi
     return 0
@@ -238,6 +256,31 @@ test_m_and_n_truncate() {
     assert_mock_log_contains "MOCK_SRUN args=-n 2"
 }
 
+test_bare_salloc_no_ntasks() {
+    # Headline fix: a bare 'salloc -N2' sets neither SLURM_NTASKS nor
+    # SLURM_TASKS_PER_NODE. The launcher must still derive the machine file
+    # (one task per node) and run, instead of failing on a missing variable.
+    export SLURM_JOB_ID=7000
+    unset SLURM_NTASKS SLURM_NPROCS
+    export SLURM_TEST_HOSTS="hosta hostb"
+    run_slurm "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "MOCK_SCONTROL args=show hostnames" &&
+    assert_mock_log_contains "MOCK_SRUN args=-n 2"
+}
+
+test_tasks_per_node_decompress() {
+    # SLURM_TASKS_PER_NODE drives the per-node layout and is given in compressed
+    # form: "2(x2)" => 2 tasks on each of 2 nodes => 4 ranks total.
+    export SLURM_JOB_ID=7001
+    unset SLURM_NTASKS SLURM_NPROCS
+    export SLURM_TEST_HOSTS="hosta hostb"
+    export SLURM_TASKS_PER_NODE="2(x2)"
+    run_slurm "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "MOCK_SRUN args=-n 4"
+}
+
 test_m_and_n_exact() {
     # machinefile has 3 hosts, -n 3 should use all of them.
     export SLURM_NTASKS=3 SLURM_NPROCS=3
@@ -260,6 +303,16 @@ test_n_preserves_machinefile() {
 ######################################################################
 # Category 3: Option interactions
 ######################################################################
+
+test_mfile_broadcast() {
+    # The machine file must be broadcast to the nodes (sbcast) so every rank can
+    # read GASPI_MFILE locally; srun must then receive the node-local path, not
+    # the submit-node temp file.
+    run_slurm -m "$MF" "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "MOCK_SBCAST" &&
+    assert_mock_log_contains "/tmp/gaspi.mfile."
+}
 
 test_numa_option() {
     run_slurm -N -m "$MF" "$FIXTURE_DIR/test_app.sh"
@@ -394,6 +447,40 @@ test_error_no_mfile_no_jobid() {
     assert_output_contains "SLURM_JOB_ID not defined"
 }
 
+test_nested_step_uses_overlap() {
+    # Launched inside an srun step (e.g. an interactive 'srun --pty bash'): a
+    # plain nested step would be blocked, so the launcher must overlap the outer
+    # step (srun --overlap) instead of failing.
+    export SLURM_STEP_ID=0
+    run_slurm -m "$MF" "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "--overlap" &&
+    assert_no_temp_files
+}
+
+test_nested_step_skips_allocation_ceiling() {
+    # Inside a step SLURM_NTASKS reflects the outer step (here 1), but --overlap
+    # can use the whole allocation, so a 3-host machine file must NOT trip the
+    # "exceeds the Slurm job's allocation" guard.
+    export SLURM_STEP_ID=0
+    export SLURM_NTASKS=1 SLURM_NPROCS=1
+    run_slurm -m "$MF3" "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_contains "MOCK_SRUN args=-n 3" &&
+    assert_mock_log_contains "--overlap"
+}
+
+test_nested_step_without_overlap_support() {
+    # Old Slurm (< 20.11): the capability probe finds no --overlap, so the
+    # launcher must NOT pass it, and must warn the user instead of failing.
+    export SLURM_STEP_ID=0
+    export MOCK_SRUN_NO_OVERLAP=1
+    run_slurm -m "$MF" "$FIXTURE_DIR/test_app.sh"
+    assert_exit_code 0 &&
+    assert_mock_log_not_contains "--overlap" &&
+    assert_stderr_contains "lacks --overlap"
+}
+
 ######################################################################
 # Category 5: Cleanup and exit codes
 ######################################################################
@@ -458,12 +545,15 @@ echo
 echo "--- Machine source modes ---"
 run_test test_machinefile_only
 run_test test_auto_machinefile
+run_test test_bare_salloc_no_ntasks
+run_test test_tasks_per_node_decompress
 run_test test_m_and_n_truncate
 run_test test_m_and_n_exact
 run_test test_n_preserves_machinefile
 
 echo
 echo "--- Option interactions ---"
+run_test test_mfile_broadcast
 run_test test_numa_option
 
 echo
@@ -488,6 +578,12 @@ run_test test_error_n_nonnumeric
 run_test test_error_n_exceeds_resources
 run_test test_error_mfile_exceeds_allocation
 run_test test_error_no_mfile_no_jobid
+
+echo
+echo "--- Nested step (interactive srun --pty) ---"
+run_test test_nested_step_uses_overlap
+run_test test_nested_step_skips_allocation_ceiling
+run_test test_nested_step_without_overlap_support
 
 echo
 echo "--- Cleanup and exit codes ---"
