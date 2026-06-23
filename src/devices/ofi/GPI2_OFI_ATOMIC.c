@@ -1,5 +1,5 @@
 /*
-  Copyright (c) Fraunhofer ITWM, 2013-2025
+  Copyright (c) Fraunhofer ITWM, 2013-2026
 
   This file is part of GPI-2.
 
@@ -57,19 +57,6 @@ pgaspi_dev_atomic_fetch_add (gaspi_context_t * const gctx,
   gaspi_ofi_ctx* ofi_ctx = gctx->device->ctx;
 
   struct ofi_fabric* fabric_ctx = ofi_ctx->rank_fabric_map[rank];
-
-  //TODO: do this once, somewhere else
-  size_t count = 0;
-  if (fi_fetch_atomicvalid (fabric_ctx->qAtomic->ep,
-                            FI_UINT64,
-                            FI_SUM,
-                            &count)
-      != 0)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Atomic operation not supported.");
-    return GASPI_ERR_DEVICE;
-  }
-
 
   uint64_t remote_addr =
     fabric_ctx->info->domain_attr->mr_mode & FI_MR_VIRT_ADDR ?

@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -21,6 +21,10 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include <string.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <time.h>
+#if defined(__x86_64__)
+#include <cpuid.h>
+#endif
 #include "GASPI_types.h"
 #include "GPI2.h"
 #include "GPI2_Sys.h"
@@ -102,11 +106,122 @@ _gaspi_sample_cpu_freq (void)
   return (float) beta;
 }
 
+/* Read the nominal TSC frequency (in MHz) directly from the hardware. Returns
+ * 0.0f when it cannot be determined (caller falls back). */
+static float
+_gaspi_tsc_freq_cpuid (void)
+{
+#if defined(__x86_64__)
+  unsigned int eax, ebx, ecx, edx;
+
+  if (!__get_cpuid (0x80000007, &eax, &ebx, &ecx, &edx) || !(edx & (1u << 8)))
+  {
+    return 0.0f;
+  }
+
+  const unsigned int maxleaf = __get_cpuid_max (0, NULL);
+
+  /* Leaf 0x15: TSC = core_crystal(ECX) * ratio_num(EBX) / ratio_den(EAX). */
+  if (maxleaf >= 0x15)
+  {
+    __cpuid (0x15, eax, ebx, ecx, edx);
+    if (eax != 0 && ebx != 0 && ecx != 0)
+    {
+      return (float) ((double) ecx * (double) ebx / (double) eax / 1.0e6);
+    }
+  }
+
+  /* Leaf 0x16: processor base frequency (MHz), ~= TSC nominal on these
+     parts. */
+  if (maxleaf >= 0x16)
+  {
+    __cpuid (0x16, eax, ebx, ecx, edx);
+    const unsigned int base_mhz = eax & 0xffff;
+    if (base_mhz != 0)
+    {
+      return (float) base_mhz;
+    }
+  }
+#endif
+  return 0.0f;
+}
+
+/* Calibrate the cycle-counter frequency (MHz) from a few short busy-wait
+ * windows timed with CLOCK_MONOTONIC_RAW. (no CPUID dependency) */
+
+#define GASPI_CALIB_WINDOWS    5
+#define GASPI_CALIB_WINDOW_NS  (5L * 1000L * 1000L)   /* 5 ms per window */
+
+static float
+_gaspi_calib_cpu_freq (void)
+{
+  double mhz[GASPI_CALIB_WINDOWS];
+
+  for (int r = 0; r < GASPI_CALIB_WINDOWS; ++r)
+  {
+    struct timespec ts;
+
+    if (clock_gettime (CLOCK_MONOTONIC_RAW, &ts))
+    {
+      return 0.0f;
+    }
+
+    const double t0 = (double) ts.tv_sec * 1.0e9 + (double) ts.tv_nsec;
+    const gaspi_cycles_t c0 = gaspi_get_cycles();
+    const double target = t0 + (double) GASPI_CALIB_WINDOW_NS;
+
+    double t1;
+    do
+    {
+      if (clock_gettime (CLOCK_MONOTONIC_RAW, &ts))
+      {
+        return 0.0f;
+      }
+      t1 = (double) ts.tv_sec * 1.0e9 + (double) ts.tv_nsec;
+    }
+    while (t1 < target);
+
+    const gaspi_cycles_t c1 = gaspi_get_cycles();
+
+    mhz[r] = (double) (c1 - c0) / (t1 - t0) * 1.0e3;   /* cyc/ns * 1e3 = MHz */
+  }
+
+  for (int i = 1; i < GASPI_CALIB_WINDOWS; ++i)
+  {
+    const double key = mhz[i];
+    int j = i - 1;
+
+    while (j >= 0 && mhz[j] > key)
+    {
+      mhz[j + 1] = mhz[j];
+      --j;
+    }
+    mhz[j + 1] = key;
+  }
+
+  return (float) mhz[GASPI_CALIB_WINDOWS / 2];
+}
+
 float
 gaspi_get_cpufreq (void)
 {
   float mhz = 0.0f;
 
+  /* Fast path: derive the TSC frequency from CPUID (instant, no busy-wait). */
+  mhz = _gaspi_tsc_freq_cpuid();
+  if (mhz > 0.0f)
+  {
+    return mhz;
+  }
+
+  /* CPUID didn't tell us: calibrate cheaply. */
+  mhz = _gaspi_calib_cpu_freq();
+  if (mhz > 0.0f)
+  {
+    return mhz;
+  }
+
+  /* Last resort: regression. */
   mhz = _gaspi_sample_cpu_freq();
 
   if (0.0f == mhz)
@@ -250,18 +365,16 @@ gaspi_get_affinity_mask (const int sock, cpu_set_t * cpuset)
 }
 
 char *
-pgaspi_gethostname (const unsigned int id)
+pgaspi_gethostname (gaspi_context_t const *const gctx, const unsigned int id)
 {
-  //TODO: ctx as arg
-  gaspi_context_t const *const gctx = &glb_gaspi_ctx;
-
-  return gctx->hn_poff + id * 64;
+  return gctx->topology->hosts[id];
 }
 
 int
 pgaspi_ranks_are_local (gaspi_rank_t a, gaspi_rank_t b)
 {
-  return strcmp (pgaspi_gethostname (a), pgaspi_gethostname (b)) == 0;
+  gaspi_context_t const *const gctx = &glb_gaspi_ctx;
+  return gctx->topology->hosts_ids[a] == gctx->topology->hosts_ids[b];
 }
 
 void gaspi_delay (void)

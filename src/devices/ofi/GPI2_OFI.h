@@ -1,5 +1,5 @@
 /*
-  Copyright (c) Fraunhofer ITWM, 2013-2025
+  Copyright (c) Fraunhofer ITWM, 2013-2026
 
   This file is part of GPI-2.
 
@@ -29,6 +29,7 @@
 
 #define GPI2_OFI_MAX_FABRICS 2
 #define GPI2_OFI_MAX_ADDR_LEN 64
+#define GPI2_OFI_MAX_SHM_ADDRS 256
 
 #ifdef __GNUC__ // GCC, Clang, ICC
 #define OFI_UNREACHABLE() (__builtin_unreachable())
@@ -78,6 +79,7 @@ struct ofi_fabric
 
   uint32_t num_qC;
   struct ofi_queue** qC;
+  gaspi_lock_t qCQ_lock[GASPI_MAX_QP];   /* guards qC[q]->scq vs. progress thread */
   struct ofi_queue* qP;
   struct ofi_queue* qGroups;
   struct ofi_queue* qAtomic;

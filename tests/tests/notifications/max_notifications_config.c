@@ -27,9 +27,11 @@ int main ()
 
   ASSERT (gaspi_proc_init (GASPI_BLOCK));
 
-  gaspi_rank_t num, rank;
+  gaspi_rank_t num, rank, target_rank;
   ASSERT (gaspi_proc_num (&num));
   ASSERT (gaspi_proc_rank (&rank));
+
+  target_rank = num > 1 ? 1 : 0;
 
   ASSERT (gaspi_segment_create (0, sizeof(char), GASPI_GROUP_ALL,
                                 GASPI_BLOCK, GASPI_MEM_UNINITIALIZED));
@@ -48,7 +50,7 @@ int main ()
   {
     for (gaspi_notification_id_t i = 1; i <= triple_max_notification;++i)
     {
-      res = gaspi_notify (0, 1, i, 1, 0, GASPI_BLOCK);
+      res = gaspi_notify (0, target_rank, i, 1, 0, GASPI_BLOCK);
       if (i >= default_conf.notification_num)
       {
         assert (res == GASPI_ERR_INV_NOTIF_ID);
@@ -59,11 +61,12 @@ int main ()
         if (queue_size > queue_max - 1)
           ASSERT (gaspi_wait (0, GASPI_BLOCK));
 
-        ASSERT (gaspi_notify (0, 1, i, 1, 0, GASPI_BLOCK));
+        ASSERT (gaspi_notify (0, target_rank, i, 1, 0, GASPI_BLOCK));
       }
     }
   }
-  else
+
+  if (rank == target_rank)
   {
     for (gaspi_notification_id_t i=1; i<=triple_max_notification; ++i)
     {

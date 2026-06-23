@@ -13,7 +13,7 @@ main (int argc, char *argv[])
   ASSERT (gaspi_proc_local_num (&local_num));
   ASSERT (gaspi_proc_local_rank (&local_rank));
 
-  gaspi_printf ("Hello from rank %d of %d (locally: rank %d of %d\n",
+  gaspi_printf ("Hello from rank %d of %d (locally: rank %d of %d)\n",
                 rank, num, local_rank, local_num);
 
   gaspi_barrier (GASPI_GROUP_ALL, GASPI_BLOCK);

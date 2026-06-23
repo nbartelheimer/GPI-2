@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -24,7 +24,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include <stdint.h>
 #include "GASPI_types.h"
 #include "GPI2_CM.h"
-
+#include "GPI2_Topology.h"
 
 #define ALIGN64  __attribute__ ((aligned (64)))
 
@@ -126,8 +126,7 @@ typedef struct
   float cycles_to_msecs;
   char mfile[1024];
   int *sockfd;
-  char *hn_poff;
-  unsigned char *poff;
+  gpi2_topology_t* topology;
   gaspi_number_t group_cnt;
   gaspi_group_ctx_t *groups;
 
@@ -157,6 +156,7 @@ typedef struct
 
   /* Number of "created" communication queues */
   gaspi_number_t num_queues;
+  gaspi_state_t state_vec_queue[GASPI_MAX_QP];
 
   /* Comm counters  */
   gaspi_uint ne_count_grp;

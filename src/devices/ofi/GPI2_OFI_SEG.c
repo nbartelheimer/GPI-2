@@ -1,5 +1,5 @@
 /*
-  Copyright (c) Fraunhofer ITWM, 2013-2025
+  Copyright (c) Fraunhofer ITWM, 2013-2026
 
   This file is part of GPI-2.
 
@@ -137,8 +137,18 @@ ofi_register_multi_domain_mr (gaspi_ofi_ctx* ofi_ctx,
                                       buf,
                                       size,
                                       key);
+        if (NULL == mr)
+        {
+          for (int g = 0; g < f; g++)
+            if (ofi_mr->mr_fabric[g])
+              fi_close (&ofi_mr->mr_fabric[g]->fid);
+
+          free (ofi_mr);
+          return NULL;
+        }
+
         ofi_mr->mr_fabric[f] = mr;
-        ofi_mr->rkey_fabric[f] = mr ? fi_mr_key (mr) : 0;
+        ofi_mr->rkey_fabric[f] = fi_mr_key (mr);
       }
     }
   }
@@ -206,18 +216,21 @@ pgaspi_dev_unregister_mem (gaspi_context_t const *const gctx,
   /* Note: Magic number 2 for the data and notifications spaces */
   for (int s = 0; s < 2; s++)
   {
+    struct ofi_mr* ofi_mr = (struct ofi_mr*) seg->mr[s];
+    if (!ofi_mr)
+      continue;
+
     for (int f = 0; f < GPI2_OFI_MAX_FABRICS; f++)
     {
-      struct ofi_mr* ofi_mr = (struct ofi_mr*) seg->mr[s];
-
-      if (ofi_mr && ofi_mr->mr_fabric[f])
+      if (ofi_mr->mr_fabric[f])
       {
         if (fi_close (&((struct fid_mr*) ofi_mr->mr_fabric[f])->fid))
-        {
           return -1;
-        }
       }
     }
+
+    free (ofi_mr);
+    seg->mr[s] = NULL;
   }
 
   return 0;

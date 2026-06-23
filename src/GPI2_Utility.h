@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -78,7 +78,8 @@ extern gaspi_context_t glb_gaspi_ctx;
 #define GASPI_VERIFY_QUEUE(queue)                                              \
   {                                                                            \
     if (queue > GASPI_MAX_QP ||                                                \
-        pgaspi_dev_comm_queue_is_valid (&glb_gaspi_ctx, queue))                \
+        pgaspi_dev_comm_queue_is_valid (&glb_gaspi_ctx, queue) ||              \
+        glb_gaspi_ctx.state_vec_queue[queue] != GASPI_STATE_HEALTHY)           \
     {                                                                          \
       return GASPI_ERR_INV_QUEUE;                                              \
     }                                                                          \

@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -26,6 +26,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_Mem.h"
 #include "GPI2_SN.h"
 #include "GPI2_Stats.h"
+#include "GPI2_Trace.h"
 #include "GPI2_Sys.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
@@ -154,11 +155,14 @@ pgaspi_group_create (gaspi_group_t * const group)
   GASPI_VERIFY_INIT ("gaspi_group_create");
   GASPI_VERIFY_NULL_PTR (group);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_GRP_CREATE);
+
   lock_gaspi_tout (&(gctx->ctx_lock), GASPI_BLOCK);
 
   if (gctx->group_cnt >= gctx->config->group_max)
   {
     unlock_gaspi (&(gctx->ctx_lock));
+    GPI2_TRACE_END (GPI2_EV_GRP_CREATE);
     return GASPI_ERR_MANY_GRP;
   }
 
@@ -175,6 +179,7 @@ pgaspi_group_create (gaspi_group_t * const group)
   if (id == gctx->config->group_max)
   {
     unlock_gaspi (&(gctx->ctx_lock));
+    GPI2_TRACE_END (GPI2_EV_GRP_CREATE);
     return GASPI_ERR_MANY_GRP;
   }
 
@@ -218,12 +223,14 @@ pgaspi_group_create (gaspi_group_t * const group)
   new_grp_ctx->id = id;
 
   unlock_gaspi (&(gctx->ctx_lock));
+  GPI2_TRACE_END (GPI2_EV_GRP_CREATE);
   return GASPI_SUCCESS;
 
 errL:
   _gaspi_release_group_mem (gctx, id);
   unlock_gaspi (&(gctx->ctx_lock));
 
+  GPI2_TRACE_END (GPI2_EV_GRP_CREATE);
   return eret;
 }
 
@@ -265,7 +272,10 @@ pgaspi_group_delete (const gaspi_group_t group)
     return GASPI_ERR_INV_GROUP;
   }
 
-  return pgaspi_group_delete_no_verify (group);
+  GPI2_TRACE_BEGIN (GPI2_EV_GRP_DELETE);
+  gaspi_return_t eret = pgaspi_group_delete_no_verify (group);
+  GPI2_TRACE_END (GPI2_EV_GRP_DELETE);
+  return eret;
 }
 
 static int
@@ -420,6 +430,8 @@ pgaspi_group_commit (const gaspi_group_t group,
   GASPI_VERIFY_INIT ("gaspi_group_commit");
   GASPI_VERIFY_GROUP (group);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_GRP_COMMIT);
+
   gaspi_group_ctx_t *group_to_commit = &(gctx->groups[group]);
 
   if (lock_gaspi_tout (&(gctx->ctx_lock), timeout_ms))
@@ -488,6 +500,7 @@ pgaspi_group_commit (const gaspi_group_t group,
 
 endL:
   unlock_gaspi (&(gctx->ctx_lock));
+  GPI2_TRACE_END (GPI2_EV_GRP_COMMIT);
   return eret;
 }
 
@@ -632,6 +645,8 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
   GASPI_VERIFY_INIT ("gaspi_barrier");
   GASPI_VERIFY_GROUP (g);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_BARRIER);
+
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
   gaspi_group_ctx_t *const grp_ctx = &(gctx->groups[g]);
 
@@ -639,12 +654,14 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
 
   if (lock_gaspi_tout (&(grp_ctx->gl), timeout_ms))
   {
+    GPI2_TRACE_END (GPI2_EV_BARRIER);
     return GASPI_TIMEOUT;
   }
 
   if (!(grp_ctx->active_coll_op & GASPI_BARRIER))
   {
     unlock_gaspi (&grp_ctx->gl);
+    GPI2_TRACE_END (GPI2_EV_BARRIER);
     return GASPI_ERR_ACTIVE_COLL;
   }
 
@@ -693,6 +710,7 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
       {
         GASPI_DEBUG_PRINT_ERROR ("Failed to connect to rank %u", dst);
         unlock_gaspi (&grp_ctx->gl);
+        GPI2_TRACE_END (GPI2_EV_BARRIER);
         return eret;
       }
     }
@@ -704,6 +722,7 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
       {
         GASPI_DEBUG_PRINT_ERROR ("Failed to commit to rank %u", dst);
         unlock_gaspi (&grp_ctx->gl);
+        GPI2_TRACE_END (GPI2_EV_BARRIER);
         return eret;
       }
     }
@@ -716,6 +735,7 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
     {
       gctx->state_vec[GASPI_COLL_QP][dst] = GASPI_STATE_CORRUPT;
       unlock_gaspi (&grp_ctx->gl);
+      GPI2_TRACE_END (GPI2_EV_BARRIER);
       return GASPI_ERR_DEVICE;
     }
 
@@ -726,6 +746,7 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
     {
       grp_ctx->lastmask = mask | 0x80000000;
       unlock_gaspi (&grp_ctx->gl);
+      GPI2_TRACE_END (GPI2_EV_BARRIER);
       return GASPI_TIMEOUT;
     }
 
@@ -743,6 +764,7 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
   if (pret < 0)
   {
     unlock_gaspi (&grp_ctx->gl);
+    GPI2_TRACE_END (GPI2_EV_BARRIER);
     return GASPI_ERR_DEVICE;
   }
 
@@ -757,6 +779,7 @@ pgaspi_barrier (const gaspi_group_t g, const gaspi_timeout_t timeout_ms)
 
   unlock_gaspi (&(grp_ctx->gl));
 
+  GPI2_TRACE_END (GPI2_EV_BARRIER);
   return GASPI_SUCCESS;
 }
 
@@ -1094,19 +1117,24 @@ pgaspi_allreduce (const gaspi_pointer_t buf_send,
   GASPI_VERIFY_NULL_PTR (buf_recv);
   GASPI_VERIFY_GROUP (g);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_ALLREDUCE);
+
   if (elem_cnt > gctx->config->allreduce_elem_max)
   {
+    GPI2_TRACE_END (GPI2_EV_ALLREDUCE);
     return GASPI_ERR_INV_NUM;
   }
 
   if (lock_gaspi_tout (&gctx->groups[g].gl, timeout_ms))
   {
+    GPI2_TRACE_END (GPI2_EV_ALLREDUCE);
     return GASPI_TIMEOUT;
   }
 
   if (!(gctx->groups[g].active_coll_op & GASPI_ALLREDUCE))
   {
     unlock_gaspi (&gctx->groups[g].gl);
+    GPI2_TRACE_END (GPI2_EV_ALLREDUCE);
     return GASPI_ERR_ACTIVE_COLL;
   }
 
@@ -1126,6 +1154,7 @@ pgaspi_allreduce (const gaspi_pointer_t buf_send,
 
   unlock_gaspi (&gctx->groups[g].gl);
 
+  GPI2_TRACE_END (GPI2_EV_ALLREDUCE);
   return eret;
 }
 

@@ -11,7 +11,7 @@ main (int argc, char *argv[])
   ASSERT (gaspi_proc_init (GASPI_BLOCK));
 
   gaspi_notification_id_t notif = 0;
-  gaspi_number_t notif_num, n;
+  gaspi_number_t notif_num, n = 0;
   gaspi_rank_t rank, nprocs, i;
   const gaspi_segment_id_t seg_id = 0;
 

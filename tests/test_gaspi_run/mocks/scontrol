@@ -1,0 +1,12 @@
+#!/bin/sh
+# Mock scontrol for the gaspi_run.slurm auto-machinefile tests.
+#
+# Only "scontrol show hostnames" is supported: it prints the host list from
+# SLURM_TEST_HOSTS (space-separated, default "localhost"), one per line, so the
+# launcher can build machines_$SLURM_JOB_ID without a real Slurm allocation.
+
+echo "MOCK_SCONTROL args=$*" >> "$MOCK_LOG"
+
+if [ "$1" = "show" ] && [ "$2" = "hostnames" ]; then
+    printf '%s\n' ${SLURM_TEST_HOSTS:-localhost}
+fi

@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -124,7 +124,7 @@ pgaspi_printf_to (gaspi_rank_t log_rank, const char *fmt, ...)
       goto endL;
     }
 
-    char *target_logger = pgaspi_gethostname (log_rank);
+    char *target_logger = pgaspi_gethostname (gctx, log_rank);
 
     if (target_logger != NULL)
     {

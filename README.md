@@ -2,8 +2,8 @@
                        GPI-2
               http://www.gpi-site.com
 
-                  Version: 1.6.0
-              Copyright (C) 2013-2025
+                  Version: 1.7.0
+              Copyright (C) 2013-2026
                  Fraunhofer ITWM
 
 ******************************************************************************
@@ -182,7 +182,7 @@ If a libfabric version is found, that is enough. If however, it cannot
 be found, one can provide a path to the option:
 
 ```
-./configure --with-ofi=<full_path_to_ofi_installation>
+./configure --with-ofi=<full_path_to_libfabric_installation>
 
 ```
 
@@ -316,29 +316,31 @@ of a machine file (-m option):
 The `gaspi_run` utility has the following further options `[OPTIONS]`:
 
 ```
-  -b <binary file> Use a different binary for first node (master).
+  -b, --binary <binary file>
+                   Use a different binary for first node (master).
                    The master (first entry in the machine file) is
-           started with a different application than the rest
-           of the nodes (workers).
+                   started with a different application than the rest
+                   of the nodes (workers).
 
-  -N               Enable NUMA for processes on same node. With this
-           option it is only possible to start the same number
-           of processes as NUMA nodes present on the system.
-           The processes running on same node will be set with
-           affinity to the proper NUMA node.
+  -N, --NUMMA      Enable NUMA for processes on same node. With this
+                   option it is only possible to start the same number
+                   of processes as NUMA nodes present on the system.
+                   The processes running on same node will be set with
+                   affinity to the proper NUMA node.
 
-  -n <procs>       Start as many <procs> from machine file.
-               This option is used to start less processes than
-           those listed in the machine file.
+  -n, --nodes <procs>
+                   Start as many <procs> from machine file.
+                   This option is used to start less processes than
+                   those listed in the machine file.
 
-  -d               Run with GDB (debugger) on master node. With this
-           option, GDB is started in the master node, to allow
-           debugging the application.
+  -d, --debug      Run with GDB (debugger) on master node. With this
+                   option, GDB is started in the master node, to allow
+                   debugging the application.
 
-  -p               Ping hosts before starting the binary to make sure
-           they are available.
+  -p, --ping       Ping hosts before starting the binary to make sure
+                   they are available.
 
-  -h               Show help.
+  -h, --help       Show help.
 ```
 
 ### Non-interactive usage
@@ -372,7 +374,61 @@ will display the string "Hello 1" in the `gaspi_logger` started on rank
 1.
 
 
-## 6. TROUBLESHOOTING AND KNOWN ISSUES
+## 6. TRACING
+
+GPI-2 includes a built-in tracing facility for profiling GASPI
+operations. Tracing is activated at runtime via the `GASPI_TRACE`
+environment variable — no recompilation needed for lifecycle
+operations (init, segments, groups, collectives, passive).
+
+Data-path operations (read, write, notify, wait, atomics) are only
+traced when linked against `libGPI2-stats`, which includes full
+hot-path instrumentation.
+
+### Enabling tracing
+
+Using `gaspi_run`:
+
+```
+gaspi_run -m machinefile --trace my_app           # trace all categories
+gaspi_run -m machinefile --trace init,seg my_app  # trace only init and segments
+```
+
+Or directly via environment variable:
+
+```
+GASPI_TRACE=all gaspi_run -m machinefile my_app
+GASPI_TRACE=init,coll gaspi_run -m machinefile my_app
+```
+
+Available categories: `init`, `seg`, `io`, `coll`, `grp`, `atomic`,
+`passive`, `sn`. Use `all` or `1` to enable everything.
+
+### Trace output
+
+Each rank writes a binary trace file `gaspi_trace_rank<N>.bin` in
+the working directory. Use the `gpi2_trace_dump` tool to convert:
+
+```
+gpi2_trace_dump gaspi_trace_rank0.bin                  # human-readable text
+gpi2_trace_dump -f csv gaspi_trace_rank0.bin           # CSV
+gpi2_trace_dump -f json gaspi_trace_rank0.bin > t.json # Chrome Trace Format
+```
+
+Multiple files can be merged into a single output — events are
+sorted by timestamp and tagged with their rank:
+
+```
+gpi2_trace_dump gaspi_trace_rank*.bin                   # merged text
+gpi2_trace_dump -f json gaspi_trace_rank*.bin > all.json # merged JSON
+gpi2_trace_dump -r gaspi_trace_rank*.bin                # relative (each rank starts at t=0)
+```
+
+The JSON output can be visualized in `chrome://tracing` or
+[Perfetto UI](https://ui.perfetto.dev).
+
+
+## 7. TROUBLESHOOTING AND KNOWN ISSUES
 
 If there are troubles when building GPI-2 with support for Infiniband,
 make sure the OFED stack is correctly installed and running. As above
@@ -421,24 +477,3 @@ exit $?
 
 If you're running in MPI mixed-mode, starting your application with
 mpirun/mpiexec, this should not be an issue.
-
-
-## 7. UP COMING FEATURES
-
-GPI-2 is on-going work and more features are still to come. Here are
-some that are in our roadmap:
-
-- support to add spare nodes (fault tolerance)
-- better debugging possibilities
-
-
-## 7. LICENSE
-GPI-2 is released under the GPL-3 license (see [COPYING](COPYING)).
-
-If you would like to contribute to GPI-2, please get in touch with the
-development team at the CC-HPC of the Fraunhofer ITWM, lead by Rui
-Machado (contact can be found in the commits log).
-
-## 8. MORE INFORMATION
-
-For more information, check the GPI-2 website ( www.gpi-site.com ).

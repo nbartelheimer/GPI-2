@@ -1,5 +1,5 @@
 /*
-  Copyright (c) Fraunhofer ITWM, 2013-2025
+  Copyright (c) Fraunhofer ITWM, 2013-2026
 
   This file is part of GPI-2.
 
@@ -22,10 +22,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <rdma/fi_atomic.h>
 #include <rdma/fi_endpoint.h>
 #include <rdma/fabric.h>
 
 #include "GPI2_OFI.h"
+#include "GPI2.h"          /* lock_gaspi / unlock_gaspi (gaspi_lock_t spinlock) */
 #include "GPI2_Sys.h"
 #include "GPI2_Utility.h"
 
@@ -147,7 +149,6 @@ pgaspi_ofi_set_initial_hints (void)
   {
     hints->ep_attr->type = FI_EP_RDM;
     hints->caps = FI_RMA | FI_ATOMIC | FI_MSG;
-//    hints->caps = FI_RMA | FI_MSG;
 
     hints->domain_attr->mr_mode =
       FI_MR_ENDPOINT  |
@@ -159,7 +160,6 @@ pgaspi_ofi_set_initial_hints (void)
     hints->domain_attr->data_progress = FI_PROGRESS_MANUAL;
 
     hints->tx_attr->tclass = FI_TC_BULK_DATA;
-//    hints->domain_attr->threading = FI_THREAD_DOMAIN;
   }
 
   return hints;
@@ -174,7 +174,6 @@ pgaspi_ofi_init_getinfo_all_providers()
   /* required to get complete list of providers for initial hints */
   const char* prov_env_var = "FI_PROVIDER";
   const char* env_prov_name = getenv (prov_env_var);
-  char* _prov_name = NULL;
 
   if (NULL != env_prov_name)
   {
@@ -208,10 +207,9 @@ pgaspi_ofi_init_getinfo_all_providers()
   }
 
   /* Restore env var */
-  if (_prov_name)
+  if (env_prov_name)
   {
-    setenv (prov_env_var, _prov_name, 1);
-    free (_prov_name);
+    setenv (prov_env_var, env_prov_name, 1);
   }
 
   fi_freeinfo (init_hints);
@@ -311,18 +309,22 @@ pgaspi_ofi_progress_engine (void* arg)
 
   int err = 0;
 
-  while (fabric_ctx->keep_progress_engine_running)
+  while (__atomic_load_n (&fabric_ctx->keep_progress_engine_running,
+                          __ATOMIC_RELAXED))
   {
     //progress on communication queues
     for (int q = 0; q < fabric_ctx->num_qC; q++)
     {
+      lock_gaspi (&fabric_ctx->qCQ_lock[q]);
       if (fabric_ctx->qC[q] == NULL || fabric_ctx->qC[q]->scq == NULL)
       {
+        unlock_gaspi (&fabric_ctx->qCQ_lock[q]);
         continue;
       }
 
       //TODO: += not quite the best approach
       err += pgaspi_ofi_make_progress_on_cq (fabric_ctx->qC[q]->scq);
+      unlock_gaspi (&fabric_ctx->qCQ_lock[q]);
     }
 
     //progress on atomic queue
@@ -330,8 +332,6 @@ pgaspi_ofi_progress_engine (void* arg)
 
     //progress on groups queue
     err += pgaspi_ofi_make_progress_on_cq (fabric_ctx->qGroups->scq);
-
-//    usleep (1);
   }
 
 #ifdef GPI2_OFI_DEBUG_MODE
@@ -347,7 +347,8 @@ pgaspi_ofi_progress_engine (void* arg)
 int
 pgaspi_ofi_start_progress_engine (struct ofi_fabric* fabric_ctx)
 {
-  fabric_ctx->keep_progress_engine_running = 1;
+  __atomic_store_n (&fabric_ctx->keep_progress_engine_running,
+                    1, __ATOMIC_RELAXED);
 
   return pthread_create (&fabric_ctx->progress_thread,
                          NULL,
@@ -358,7 +359,8 @@ pgaspi_ofi_start_progress_engine (struct ofi_fabric* fabric_ctx)
 int
 pgaspi_ofi_stop_progress_engine (struct ofi_fabric* fabric_ctx)
 {
-  fabric_ctx->keep_progress_engine_running = 0;
+  __atomic_store_n (&fabric_ctx->keep_progress_engine_running,
+                    0, __ATOMIC_RELAXED);
 
   return pthread_join (fabric_ctx->progress_thread, NULL);
 }
@@ -425,21 +427,31 @@ pgaspi_ofi_create_queue (struct ofi_fabric* fabric_ctx,
   //if queue type is ATOMIC we need to alter the default capabilities
   //to include FI_ATOMIC. On IB, the performance of an endpoint with
   //FI_ATOMIC drops considerably.
+  int err;
   if (type == ATOMIC)
   {
     fabric_ctx->hints->caps = FI_ATOMIC | FI_RMA | FI_MSG;
 
-    fabric_ctx->info = pgaspi_ofi_getinfo (fabric_ctx->hints);
-    if (NULL == fabric_ctx->info)
+    struct fi_info* atomic_info = pgaspi_ofi_getinfo (fabric_ctx->hints);
+    if (NULL == atomic_info)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to get fabric information (ofi).");
       free (q);
       return NULL;
     }
+
+    err = fi_endpoint (fabric_ctx->domain, atomic_info, &(q->ep), NULL);
+    fi_freeinfo (atomic_info);
+
+    //keep ATOMIC in hints due to a libfabric bug in older versions
+    fabric_ctx->hints->caps = FI_RMA | FI_MSG | FI_ATOMIC;
+  }
+  else
+  {
+    /* Endpoint */
+    err = fi_endpoint (fabric_ctx->domain, fabric_ctx->info, &(q->ep), NULL);
   }
 
-  /* Endpoint */
-  int err = fi_endpoint (fabric_ctx->domain, fabric_ctx->info, &(q->ep), NULL);
   if (err)
   {
     free (q);
@@ -447,24 +459,6 @@ pgaspi_ofi_create_queue (struct ofi_fabric* fabric_ctx,
     GASPI_DEBUG_PRINT_ERROR
       ("Failed to create endpoint (ofi): error %d.", err);
     return NULL;
-  }
-
-  //Set info capabilities back to minimum (RMA and MSG)
-  if (type == ATOMIC)
-  {
-    //we need to keep the ATOMIC due to a libfabric bug in older
-    //versions
-    fabric_ctx->hints->caps = FI_RMA | FI_MSG | FI_ATOMIC;
-//    fabric_ctx->hints->caps = FI_RMA | FI_MSG;
-
-
-    fabric_ctx->info = pgaspi_ofi_getinfo (fabric_ctx->hints);
-    if (NULL == fabric_ctx->info)
-    {
-      GASPI_DEBUG_PRINT_ERROR ("Failed to get fabric information (ofi).");
-      free (q);
-      return NULL;
-    }
   }
 
   /* Completion queue(s) */
@@ -621,6 +615,23 @@ pgaspi_ofi_create_queues (struct ofi_fabric* fabric_ctx,
     goto errL;
   }
 
+  size_t atomic_count = 0;
+  if (fi_fetch_atomicvalid (fabric_ctx->qAtomic->ep,
+                            FI_UINT64, FI_SUM, &atomic_count) != 0)
+  {
+    GASPI_DEBUG_PRINT_ERROR
+      ("Atomic fetch_add (FI_UINT64, FI_SUM) not supported.");
+    goto errL;
+  }
+
+  if (fi_compare_atomicvalid (fabric_ctx->qAtomic->ep,
+                              FI_UINT64, FI_CSWAP, &atomic_count) != 0)
+  {
+    GASPI_DEBUG_PRINT_ERROR
+      ("Atomic compare_swap (FI_UINT64, FI_CSWAP) not supported.");
+    goto errL;
+  }
+
   fabric_ctx->qGroups = pgaspi_ofi_create_queue (fabric_ctx, RDMA, q_max);
   if (NULL == fabric_ctx->qGroups)
   {
@@ -638,6 +649,12 @@ pgaspi_ofi_create_queues (struct ofi_fabric* fabric_ctx,
     GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
 
     goto errL;
+  }
+
+  /* progress-engine locks start unlocked (fabric_ctx is malloc'd, not zeroed) */
+  for (gaspi_uint c = 0; c < GASPI_MAX_QP; c++)
+  {
+    fabric_ctx->qCQ_lock[c].lock = 0;
   }
 
   /* Create requested number of queues */
@@ -698,7 +715,15 @@ pgaspi_ofi_init_fabric_context (struct fi_info* info, const size_t peers_num)
   /* Create AV */
   struct fi_av_attr av_attr = {0};
   av_attr.type = FI_AV_TABLE;
-  av_attr.count = peers_num;
+
+  if (!strcmp (info->fabric_attr->prov_name, "shm"))
+  {
+    av_attr.count = GPI2_OFI_MAX_SHM_ADDRS;
+  }
+  else
+  {
+    av_attr.count = peers_num;
+  }
 
   fabric_ctx->av = NULL;
   err = fi_av_open (fabric_ctx->domain, &av_attr,  &(fabric_ctx->av), NULL);
@@ -707,6 +732,7 @@ pgaspi_ofi_init_fabric_context (struct fi_info* info, const size_t peers_num)
     GASPI_DEBUG_PRINT_ERROR
       ("Failed to open address vector (ofi): error %d: %s.",
        err, fi_strerror (err));
+
     free (fabric_ctx);
     return NULL;
   }
@@ -841,9 +867,10 @@ pgaspi_ofi_cleanup_fabric_ctx (struct ofi_fabric* fabric_ctx)
     return 0;
   }
 
-  int ret = -1;
   /* Stop progress thread */
-  if (fabric_ctx->info->domain_attr->data_progress == FI_PROGRESS_MANUAL)
+  if (fabric_ctx->info &&
+      fabric_ctx->info->domain_attr &&
+      fabric_ctx->info->domain_attr->data_progress == FI_PROGRESS_MANUAL)
   {
     int stop = pgaspi_ofi_stop_progress_engine (fabric_ctx);
     if (stop != 0)
@@ -857,7 +884,7 @@ pgaspi_ofi_cleanup_fabric_ctx (struct ofi_fabric* fabric_ctx)
 
   pgaspi_ofi_free_queues (fabric_ctx);
 
-  ret = pgaspi_ofi_close_fabric_ctx (fabric_ctx);
+  int ret = pgaspi_ofi_close_fabric_ctx (fabric_ctx);
 
   return ret;
 }
@@ -1067,7 +1094,8 @@ pgaspi_ofi_initialize (gaspi_context_t* gctx)
         GASPI_PRINT_WARNING ("Failed to create local fabric (ofi).");
       }
 
-      if (gctx->config->dev_config.params.ofi.provider_info)
+      if (gctx->config->dev_config.params.ofi.provider_info ||
+          gctx->config->net_info)
       {
         pgaspi_ofi_print_provider (ofi_ctx->fabric_ctx[1]);
       }
@@ -1087,7 +1115,8 @@ pgaspi_ofi_initialize (gaspi_context_t* gctx)
     return -1;
   }
 
-  if (gctx->config->dev_config.params.ofi.provider_info)
+  if (gctx->config->dev_config.params.ofi.provider_info ||
+      gctx->config->net_info)
   {
     pgaspi_ofi_print_provider (ofi_ctx->fabric_ctx[0]);
   }
@@ -1139,7 +1168,7 @@ int pgaspi_dev_init_core (gaspi_context_t * const gctx)
 
   if (NULL != gctx)
   {
-    gctx->device = calloc (1, sizeof (gctx->device));
+    gctx->device = calloc (1, sizeof (*gctx->device));
     if (NULL == gctx->device)
     {
       return -1;
@@ -1154,8 +1183,6 @@ int pgaspi_dev_init_core (gaspi_context_t * const gctx)
 
     //TODO: pass ofi_ctx plus infos needed (tnc, config (for queue_num and
     //queue_size_max), rank)
-    //gaspi_ofi_ctx* const ofi_ctx = (gaspi_ofi_ctx*) gctx->device->ctx;
-
     err = pgaspi_ofi_initialize (gctx);
 
     if (err != 0)
@@ -1271,7 +1298,30 @@ int pgaspi_dev_connect_context (gaspi_context_t const *const gctx,
 int pgaspi_dev_disconnect_context (gaspi_context_t * const gctx,
                                    const int i)
 {
-  //TODO: empty function?
+  gaspi_ofi_ctx* ofi_ctx = gctx->device->ctx;
+  if (NULL == ofi_ctx)
+  {
+    return -1;
+  }
+
+  struct ofi_fabric* fabric_ctx = ofi_ctx->rank_fabric_map[i];
+  if (NULL == fabric_ctx)
+  {
+    return 0;
+  }
+
+  fi_av_remove (fabric_ctx->av, &fabric_ctx->passive_fi_addr[i], 1, 0);
+  fi_av_remove (fabric_ctx->av, &fabric_ctx->atomic_fi_addr[i], 1, 0);
+  fi_av_remove (fabric_ctx->av, &fabric_ctx->groups_fi_addr[i], 1, 0);
+
+  const gaspi_uint conf_q_num = gctx->config->queue_num;
+  for (gaspi_uint c = 0; c < conf_q_num; c++)
+  {
+    fi_av_remove (fabric_ctx->av, &fabric_ctx->io_fi_addr[c][i], 1, 0);
+  }
+
+  ofi_ctx->rank_fabric_map[i] = NULL;
+
   return 0;
 }
 
@@ -1430,9 +1480,11 @@ pgaspi_dev_fabric_comm_queue_delete (gaspi_context_t const * const gctx,
       }
     }
 
+    lock_gaspi (&fabric_ctx->qCQ_lock[q]);
     fabric_ctx->num_qC--;
     pgaspi_ofi_free_queue (fabric_ctx->qC[q]);
     fabric_ctx->qC[q] = NULL;
+    unlock_gaspi (&fabric_ctx->qCQ_lock[q]);
   }
 }
 
@@ -1469,8 +1521,9 @@ pgaspi_dev_comm_queue_create (gaspi_context_t const *const gctx,
   // only create queue/endpoint if not yet created
   if (NULL == fabric_ctx->qC[id])
   {
-    fabric_ctx->qC[id] = pgaspi_ofi_create_queue (fabric_ctx, RDMA, conf_q_max_size);
-    if (NULL == fabric_ctx->qC[id])
+    struct ofi_queue* nq =
+      pgaspi_ofi_create_queue (fabric_ctx, RDMA, conf_q_max_size);
+    if (NULL == nq)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to create queue (ofi).");
       return -1;
@@ -1478,7 +1531,10 @@ pgaspi_dev_comm_queue_create (gaspi_context_t const *const gctx,
 
    /* NOTE: this is currently important to add the new queue to the set
     * of queues considered by the progress engine */
+    lock_gaspi (&fabric_ctx->qCQ_lock[id]);
+    fabric_ctx->qC[id] = nq;
     fabric_ctx->num_qC++;
+    unlock_gaspi (&fabric_ctx->qCQ_lock[id]);
   }
 
   //get name of endpoint/queue for remote node
@@ -1534,9 +1590,19 @@ pgaspi_dev_comm_queue_connect (gaspi_context_t const *const gctx,
     return -1;
   }
 
+  const int max_wait_us = 10 * 1000 * 1000; /* 10 seconds */
+  int waited_us = 0;
   while (strcmp ((char*) io_addr, "") == 0)
   {
     usleep (10);
+    waited_us += 10;
+    if (waited_us > max_wait_us)
+    {
+      GASPI_DEBUG_PRINT_ERROR
+        ("Timeout waiting for remote queue address (rank %d, queue %d).",
+         i, q);
+      return -1;
+    }
   }
 
   int ret = fi_av_insert (fabric_ctx->av,

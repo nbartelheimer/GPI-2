@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 
-# Copyright (c) Fraunhofer ITWM, 2013-2025
+# Copyright (c) Fraunhofer ITWM, 2013-2026
 
 # This file is part of GPI-2.
 
@@ -29,8 +29,9 @@ GPI2_MFILE=""
 GPI2_NNODES=0
 GPI2_PING_HOSTNAMES_OPTION=0
 GPI2_PRG=""
-GPI2_PRG_ARGS=""
+GPI2_PRG_ARGS=()
 GPI2_SET_NUMA=0
+GPI2_TRACE=""
 GPI2_USE_DEBUGGER=0
 
 remove_temp_files()
@@ -52,6 +53,7 @@ usage()
     echo "  -n, --nodes  <procs>       Start as many <procs> from machine file."
     echo "  -d, --debug                Run with GDB (debugger) on master node."
     echo "  -p, --ping                 Ping hosts before starting binary."
+    echo "  -t, --trace [categories]   Enable tracing (default: all)."
     echo "  -h, --help                 This help."
     echo
 
@@ -61,15 +63,16 @@ usage()
 kill_procs_in_all_hosts()
 {
     if [ ! -r "$GPI2_MFILE" ]; then
-	print_error_exit_failure "Failed to read machine file ($GPI2_MFILE) when trying to kill procs."
+	      echo "Warning: Cannot read machine file ($GPI2_MFILE). Remote processes may still be running."
+	      return
     fi
 
     local uniq_mfile=$(uniq "$GPI2_MFILE")
 
     while IFS= read -r host
     do
-	P=$(basename "$GPI2_PRG")
-	"$GPI2_LAUNCHER" "$host" "nohup killall -9 ${P}  lt-${P} ${GPI2_PRG} $(cat /dev/null)" > /dev/null 2>&1 &
+	      P=$(basename "$GPI2_PRG")
+	      "$GPI2_LAUNCHER" "$host" "nohup killall -9 ${P}  lt-${P} ${GPI2_PRG} $(cat /dev/null)" > /dev/null 2>&1 &
     done <<< "$uniq_mfile"
 
     wait
@@ -79,7 +82,7 @@ clean_exit()
 {
     local status=$1
     if [ "$status" = 1 ]; then
-	kill_procs_in_all_hosts
+	      kill_procs_in_all_hosts
     fi
     remove_temp_files
 
@@ -97,24 +100,24 @@ print_error_exit_failure()
 utility_exists()
 {
     if command -v "$1" > /dev/null 2>&1 ; then
-	return 0;
+	      return 0;
     else
-	return 1;
+	      return 1;
     fi
 }
 
 find_set_NUMA_config()
 {
     if utility_exists numactl ; then
-	GPI2_MAX_NUMA_NODES=$(numactl --hardware|grep available|cut -d' ' -f2)
-	GPI2_SET_NUMA=1
+	      GPI2_MAX_NUMA_NODES=$(numactl --hardware|grep available|cut -d' ' -f2)
+	      GPI2_SET_NUMA=1
     else
-	if utility_exists lscpu ; then
-	    GPI2_MAX_NUMA_NODES=$(lscpu|grep "NUMA node(s)"|tr -d [:space:]|cut -d':' -f2)
-	else
-	    echo "Warning: unable to detect NUMA configuration. Option not used."
-	    GPI2_SET_NUMA=0
-	fi
+	      if utility_exists lscpu ; then
+	          GPI2_MAX_NUMA_NODES=$(lscpu|grep "NUMA node(s)"|tr -d [:space:]|cut -d':' -f2)
+	      else
+	          echo "Warning: unable to detect NUMA configuration. Option not used."
+	          GPI2_SET_NUMA=0
+	      fi
     fi
 }
 
@@ -123,17 +126,17 @@ ping_hostnames()
     local mfile=$1
 
     if [ ! -r "$mfile" ]; then
-	print_error_exit_failure "Failed to read machine file ($mfile)."
+	      print_error_exit_failure "Failed to read machine file ($mfile)."
     fi
 
     local uniq_mfile=$(uniq "$mfile")
 
     while IFS= read -r host ;
     do
-	ping -c 1 "$host" >/dev/null 2>&1 ||
-	    {
-		print_error_exit_failure "Host not reachable ($host)"
-	    }
+	      ping -c 1 "$host" >/dev/null 2>&1 ||
+	          {
+		            print_error_exit_failure "Host not reachable ($host)"
+	          }
 
     done <<< "$uniq_mfile"
 }
@@ -145,17 +148,17 @@ validate_machinefile()
 
     # exists and is readable
     if [ ! -r "$mfile" ]; then
-	print_error_exit_failure "Machine file ($mfile) does not exist/not readable."
+	      print_error_exit_failure "Machine file ($mfile) does not exist/not readable."
     fi
 
     if [ ! -s "$mfile" ]; then
-	print_error_exit_failure "Empty machine file ($mfile)"
+	      print_error_exit_failure "Empty machine file ($mfile)"
     fi
 
     # newline at the end
     local endl=$(tail -c 1 "$mfile")
     if [ "$endl" != "" ]; then
-	print_error_exit_failure "No newline at end of machine file ($1)";
+	      print_error_exit_failure "No newline at end of machine file ($1)";
     fi
 
     # create tmp_file to use as machine file
@@ -163,37 +166,41 @@ validate_machinefile()
     rm -f "$TMP_MFILE"
 
     touch "$TMP_MFILE" 2>/dev/null && chmod 777 "$TMP_MFILE" ||
-    {
-	print_error_exit_failure "User permissions failure: $PWD is not writable"
-    }
+            {
+	              print_error_exit_failure "User permissions failure: $PWD is not writable"
+            }
 
-    # valid hostnames?
+    # valid hostnames or IP addresses?
     local hostname_regex='^([a-zA-Z0-9](-?[a-zA-Z0-9]){0,61}[a-zA-Z0-9])(\.[a-zA-Z]{2,})*$'
+    local ipv4_regex='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+    local ipv6_regex='^[0-9a-fA-F:]{2,39}$'
     local count=0;
 
     while IFS= read -r line && [ "$count" -lt "$nhosts" ] ;
     do
-	count=$((count+1))
+	      count=$((count+1))
 
-	# Check if the line matches the hostname pattern
-	if ! [[ $line =~ $hostname_regex ]]; then
-	    print_error_exit_failure "Invalid hostname ($line) in file $1"
-	fi
+	      # Check if the line matches a hostname or IP address pattern
+	      if ! [[ $line =~ $hostname_regex ]] && \
+	         ! [[ $line =~ $ipv4_regex ]] && \
+	         ! [[ $line =~ $ipv6_regex ]]; then
+	          print_error_exit_failure "Invalid hostname ($line) in file $1"
+	      fi
 
-	echo "$line" >> "$TMP_MFILE"
+	      echo "$line" >> "$TMP_MFILE"
     done < "$mfile"
 
     mfile=$TMP_MFILE
 
     # ping nodes (if requested)
     if [ $GPI2_PING_HOSTNAMES_OPTION -eq 1 ]; then
-	ping_hostnames "$mfile"
+	      ping_hostnames "$mfile"
     fi
 
 
     # number of nodes must fit number of hosts
     if [ "$count" -lt "$nhosts" ]; then
-	print_error_exit_failure "Not enough hosts ($count) in machine file for required number (-n $nhosts)"
+	      print_error_exit_failure "Not enough hosts ($count) in machine file for required number (-n $nhosts)"
     fi
 
     GPI2_MFILE=$mfile
@@ -202,31 +209,44 @@ validate_machinefile()
 # spawn_procs_on_hosts <machinefile> <number of ranks> <program to spawn> <program options>
 spawn_procs_on_hosts()
 {
-    local mfile=$1
-    local numranks=$2
-    local prg=$3
-    local prg_args=$4
+    local mfile="$1"
+    local numranks="$2"
+    local prg="$3"
+    shift 3
+    local prg_args=""
+    if [ $# -gt 0 ]; then
+	      prg_args=$(printf '%q ' "$@")
+    fi
 
     local rank=0;
     local node=0;
     local master_node=$(head -n 1 $mfile)
+    local local_hostname=$(hostname)
 
     uniq -c "$mfile" | while read -r count host; do
-	cmd="${GPI2_LAUNCHER_SPAWNER} ${master_node}"
-	if [ $host != $master_node ]; then
-	    cmd="$cmd 0"
-	else
-	    cmd="$cmd 1"
-	fi
-	cmd="$cmd $(readlink -f "$mfile") $((count-1))"
-	cmd="$cmd $node $((rank)) $numranks"
-	cmd="$cmd $GPI2_SET_NUMA"
-	cmd="$cmd ${prg} ${prg_args}"
+	      cmd="${GPI2_LAUNCHER_SPAWNER} ${master_node}"
+	      if [ $host != $master_node ]; then
+	          cmd="$cmd 0"
+	      else
+	          cmd="$cmd 1"
+	      fi
+	      cmd="$cmd $(readlink -f "$mfile") $((count-1))"
+	      cmd="$cmd $node $((rank)) $numranks"
+	      cmd="$cmd $GPI2_SET_NUMA"
+	      cmd="$cmd ${prg} ${prg_args}"
 
-	$GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd $(cat /dev/null) 2>&1" &
+	      if [ "$host" = "$local_hostname" ]; then
+	          GASPI_TRACE="$GPI2_TRACE" GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") nohup $cmd > /dev/null 2>&1 &
+	      else
+	          local trace_env=""
+	          if [ -n "$GPI2_TRACE" ]; then
+	              trace_env="GASPI_TRACE=$(printf '%q' "$GPI2_TRACE")"
+	          fi
+	          $GPI2_LAUNCHER "$host" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") $trace_env nohup $cmd $(cat /dev/null) 2>&1" &
+	      fi
 
-	rank=$((rank+count))
-	node=$((node+1))
+	      rank=$((rank+count))
+	      node=$((node+1))
     done
 }
 
@@ -244,76 +264,83 @@ if [ ! -x "${GPI2_LAUNCHER_SPAWNER}" ]; then
     echo
     echo "The required spawner (ssh) is missing (or not executable)"
     echo
-    clean_exit 0
+    clean_exit 1
 fi
 
 #command line parsing
 while [ -n "$1" ]; do
     case $1 in
-	-m | --machinefile)
-	    if [ -r "$2" ]; then
-		GPI2_MFILE=$2
-	    else
-		print_error_exit_failure "Cannot read file $2 (-m option) (or file does not exist)"
-	    fi
-	    shift
-	    ;;
-	-N | --NUMA)
-	    find_set_NUMA_config
-	    ;;
-	-d | --debug)
-	    if ! utility_exists gdb ; then
-		print_error_exit_failure "Cannot find GDB (debugger). Please do not use the (-d) option."
-	    fi
-	    GPI2_USE_DEBUGGER=1
-	    ;;
-	-h | --help)
-	    usage
-	    exit 0
-	    ;;
-	-b | --binary)
-	    if [ -x "$2" ]; then
-		GPI2_MASTER_PRG=$2
-	    else
-		print_error_exit_failure "Cannot find $2 (-b option) (or file is not executable)"
-	    fi
-	    shift
-	    ;;
-	-n | --nodes)
-	    if [ -n "$2" ] && expr "$2" + 0 > /dev/null 2>&1 ; then
-		GPI2_NNODES=$2
-
-	    else
-		print_error_exit_failure "Option -n requires a numeric argument greater than 0."
-	    fi
-	    shift
-	    ;;
-	-p | --ping)
-	    GPI2_PING_HOSTNAMES_OPTION=1
-	    ;;
-	-* )
-	    print_error_exit_failure "Invalid option ($1). Use -h (or --help) for available options."
-	    ;;
-	*)
-	    # Try to see if it is an executable found on the PATH
-	    FULLPATH=$(which "$1" 2> /dev/null)
-	    # If this did not turn up anything, try to convert the argument to a full path
-	    if [ -z "$FULLPATH" ]; then
-	      FULLPATH=$(readlink -f "$1")
-	    fi
-	    # Finally, check if we find an executable file at the location
-	    if [ -f "$FULLPATH" ]; then
-		if [ -x "$FULLPATH" ]; then
-		    GPI2_PRG="$FULLPATH"
-		    shift
-		    GPI2_PRG_ARGS="$*"
-		    break
-		else
-		    print_error_exit_failure "Cannot execute $1 (or file does not exist)"
-		fi
-	    else
-		print_error_exit_failure "Cannot execute $1 (not a file)"
-	    fi
+	      -m | --machinefile)
+	          if [ -r "$2" ]; then
+		            GPI2_MFILE=$2
+	          else
+		            print_error_exit_failure "Cannot read file $2 (-m option) (or file does not exist)"
+	          fi
+	          shift
+	          ;;
+	      -N | --NUMA)
+	          find_set_NUMA_config
+	          ;;
+	      -d | --debug)
+	          if ! utility_exists gdb ; then
+		            print_error_exit_failure "Cannot find GDB (debugger). Please do not use the (-d) option."
+	          fi
+	          GPI2_USE_DEBUGGER=1
+	          ;;
+	      -h | --help)
+	          usage
+	          exit 0
+	          ;;
+	      -b | --binary)
+	          if [ -x "$2" ]; then
+		            GPI2_MASTER_PRG=$2
+	          else
+		            print_error_exit_failure "Cannot find $2 (-b option) (or file is not executable)"
+	          fi
+	          shift
+	          ;;
+	      -n | --nodes)
+	          if [ -n "$2" ] && expr "$2" + 0 > /dev/null 2>&1 ; then
+		            GPI2_NNODES=$2
+	          else
+		            print_error_exit_failure "Option -n requires a numeric argument greater than 0."
+	          fi
+	          shift
+	          ;;
+	      -p | --ping)
+	          GPI2_PING_HOSTNAMES_OPTION=1
+	          ;;
+	      -t | --trace)
+	          if [ -n "$2" ] && [[ "$2" =~ ^[a-z0-9,]+$ ]]; then
+	              GPI2_TRACE="$2"
+	              shift
+	          else
+	              GPI2_TRACE="all"
+	          fi
+	          ;;
+	      -* )
+	          print_error_exit_failure "Invalid option ($1). Use -h (or --help) for available options."
+	          ;;
+	      *)
+	          # 'which ./bin/foo' returns the relative path unchanged, so always
+	          # absolutize with readlink -f (remote ranks run via ssh from $HOME).
+	          FULLPATH=$(which "$1" 2> /dev/null)
+	          if [ -z "$FULLPATH" ]; then
+	              FULLPATH="$1"
+	          fi
+	          FULLPATH=$(readlink -f "$FULLPATH")
+	          if [ -f "$FULLPATH" ]; then
+		            if [ -x "$FULLPATH" ]; then
+		                GPI2_PRG="$FULLPATH"
+		                shift
+		                GPI2_PRG_ARGS=("$@")
+		                break
+		            else
+		                print_error_exit_failure "Cannot execute $1 (or file does not exist)"
+		            fi
+	          else
+		            print_error_exit_failure "Cannot execute $1 (not a file)"
+	          fi
     esac
     shift
 done
@@ -324,18 +351,18 @@ fi
 
 #no machinefile provided, use n procs in current hostname
 if [ -z "$GPI2_MFILE" ]; then
-  if [ "$GPI2_NNODES" -eq 0 ]; then
-    print_error_exit_failure "Number of procs must be non-zero if no machinefile is provided. See help (-n option)"
-  fi
-  yes "$(hostname)" | head -n "$GPI2_NNODES" > "$AUTO_MFILE"
-  GPI2_MFILE="$AUTO_MFILE"
+    if [ "$GPI2_NNODES" -eq 0 ]; then
+        print_error_exit_failure "Number of procs must be non-zero if no machinefile is provided. See help (-n option)"
+    fi
+    yes "$(hostname)" | head -n "$GPI2_NNODES" > "$AUTO_MFILE"
+    GPI2_MFILE="$AUTO_MFILE"
 fi
 
 trap kill_procs_trap TERM INT QUIT
 
 #use all hosts in machine file
 if [ "$GPI2_NNODES" -eq 0 ]; then
-    GPI2_NNODES=$(wc -l "$GPI2_MFILE" |cut -d' ' -f1)
+    GPI2_NNODES=$(wc -l < "$GPI2_MFILE")
 fi
 
 validate_machinefile "$GPI2_MFILE" "$GPI2_NNODES"
@@ -353,7 +380,7 @@ if [ -O /tmp/.last_gaspi_prg ]; then
 fi
 
 #spawn processes (other than master/rank 0)
-spawn_procs_on_hosts $GPI2_MFILE $GPI2_NNODES $GPI2_PRG $GPI2_PRG_ARGS
+spawn_procs_on_hosts "$GPI2_MFILE" "$GPI2_NNODES" "$GPI2_PRG" "${GPI2_PRG_ARGS[@]}"
 
 
 #start rank 0
@@ -369,11 +396,16 @@ master_env=$(cat <<EOF
  export GASPI_RANK=0
  export GASPI_NRANKS="$GPI2_NNODES"
 EOF
-	  )
+	        )
+
+if [ -n "$GPI2_TRACE" ]; then
+    master_env="$master_env
+ export GASPI_TRACE=\"$GPI2_TRACE\""
+fi
 
 if [ "$first_hostname" != "$hn" ]; then
     if [ $GPI2_USE_DEBUGGER != 0 ]; then
-	print_error_exit_failure "Running with debugger only allowed if current node ($hn) is the first node in machinefile"
+	      print_error_exit_failure "Running with debugger only allowed if current node ($hn) is the first node in machinefile"
     fi
 
     #prepare differently for remote node
@@ -381,48 +413,34 @@ if [ "$first_hostname" != "$hn" ]; then
     chmod a+r "$GPI2_MFILE" > /dev/null 2>&1
     TMP_FILE=$(readlink -f "$GPI2_MFILE")
     GPI2_MFILE=$TMP_FILE
-    if ! scp "$GPI2_MFILE" "${first_hostname}":"${GPI2_MFILE}" > /dev/null 2>&1 ; then
-	echo "Warning: Failed to copy machinefile to remote host. Program might not start correctly."
+    # SCP uses colon as host:path separator, so IPv6 addresses must be bracketed.
+    scp_host="${first_hostname}"
+    if [[ "${scp_host}" =~ : ]]; then scp_host="[${scp_host}]"; fi
+    if ! scp "$GPI2_MFILE" "${scp_host}":"${GPI2_MFILE}" > /dev/null 2>&1 ; then
+	      echo "Warning: Failed to copy machinefile to remote host. Program might not start correctly."
     fi
 
-    #prepare command to execute remotely
-    cmd="/bin/sh -c '${master_env}'"
-#    cmd="$cmd export GASPI_MASTER=$first_hostname"
-#    cmd="$cmd; export GASPI_SOCKET=0"
-#    cmd="$cmd; export GASPI_MFILE=$GPI2_MFILE"
-#    cmd="$cmd; export GASPI_RANK=0"
-#    cmd="$cmd; export GASPI_NRANKS=$GPI2_NNODES"
+    escaped_args=""
+    if [ ${#GPI2_PRG_ARGS[@]} -gt 0 ]; then
+	      escaped_args=$(printf '%q ' "${GPI2_PRG_ARGS[@]}")
+    fi
 
-#    if [ $GPI2_SET_NUMA -eq 1 ]; then
-#	cmd="$cmd; export GASPI_SET_NUMA_SOCKET=1"
-    #    fi
-
-    cmd="$master_env; $GPI2_MASTER_PRG $GPI2_PRG_ARGS"
+    cmd="$master_env; $GPI2_MASTER_PRG $escaped_args"
 
     if ! $GPI2_LAUNCHER "$first_hostname" "GPI2_OFI_PROVIDER=$(printf '%q' "$FI_PROVIDER") eval $cmd" ; then
-	echo "Error: Failed to start $GPI2_MASTER_PRG on $first_hostname"
-	clean_exit 1
+	      echo "Error: Failed to start $GPI2_MASTER_PRG on $first_hostname"
+	      clean_exit 1
     fi
 else
-    # export GASPI_MASTER="$hn"
-
-    # if [ $GPI2_SET_NUMA -eq 1 ]; then
-    #	export GASPI_SET_NUMA_SOCKET=1
-    # fi
-    # export GASPI_SOCKET=0
-    # export GASPI_MFILE="$GPI2_MFILE"
-    # export GASPI_RANK=0
-    # export GASPI_NRANKS="$GPI2_NNODES"
-
     eval $master_env
 
     if [ $GPI2_USE_DEBUGGER != 0 ]; then
-	gdb --args "$GPI2_MASTER_PRG" "$GPI2_PRG_ARGS"
+	      gdb --args "$GPI2_MASTER_PRG" "${GPI2_PRG_ARGS[@]}"
     else
-	$GPI2_MASTER_PRG "$GPI2_PRG_ARGS"
+	      "$GPI2_MASTER_PRG" "${GPI2_PRG_ARGS[@]}"
     fi
     if [ $? != 0 ]; then
-	clean_exit 1
+	      clean_exit 1
     fi
 fi
 

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) Fraunhofer ITWM, 2013-2025
+  Copyright (c) Fraunhofer ITWM, 2013-2026
 
   This file is part of GPI-2.
 
@@ -32,12 +32,8 @@ pgaspi_dev_poll_groups (gaspi_context_t* const gctx)
     return 0;
   }
 
-  struct fi_cq_err_entry* comp =
-    malloc (nelems * sizeof (struct fi_cq_err_entry));
-  if (NULL == comp)
-  {
-    return GASPI_ERR_MEMALLOC;
-  }
+#define POLL_BATCH_SIZE 64
+  struct fi_cq_err_entry comp[POLL_BATCH_SIZE];
 
   gaspi_ofi_ctx* ofi_ctx = gctx->device->ctx;
 
@@ -53,10 +49,21 @@ pgaspi_dev_poll_groups (gaspi_context_t* const gctx)
 
       if (fabric_ctx && fabric_ctx->qGroups)
       {
-        ret = fi_cq_read (fabric_ctx->qGroups->scq, comp, nelems);
+        int batch = nelems < POLL_BATCH_SIZE ? nelems : POLL_BATCH_SIZE;
+        ret = fi_cq_read (fabric_ctx->qGroups->scq, comp, batch);
         if (ret > 0)
         {
           __atomic_sub_fetch (&gctx->ne_count_grp, ret, __ATOMIC_RELAXED);
+        }
+        else if (ret < 0 && ret != -FI_EAGAIN)
+        {
+          if (ret == -FI_EAVAIL)
+            pgaspi_ofi_cq_readerr (fabric_ctx->qGroups->scq);
+          else
+            GASPI_DEBUG_PRINT_ERROR
+              ("Groups CQ read error (%d: %s)", ret, fi_strerror (-ret));
+
+          return -1;
         }
       }
     }
@@ -78,7 +85,6 @@ pgaspi_dev_post_group_write (gaspi_context_t* const gctx,
  struct ofi_fabric* fabric_ctx = ofi_ctx->rank_fabric_map[dst];
 
  const gaspi_rc_mseg_t local_seg = gctx->groups[group].rrcd[gctx->rank];
-// const gaspi_rc_mseg_t remote_seg = gctx->groups[group].rrcd[dst];
 
  uint64_t remote_addr =
     fabric_ctx->info->domain_attr->mr_mode & FI_MR_VIRT_ADDR ?

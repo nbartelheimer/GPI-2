@@ -1,0 +1,9 @@
+#!/bin/bash
+# Mock gdb: logs invocation
+# Expects: gdb --args <program> [args...]
+
+echo "MOCK_GDB args=$*" >> "$MOCK_LOG"
+
+# Skip --args, run the program directly so we can verify arg passing
+shift  # remove --args
+"$@"

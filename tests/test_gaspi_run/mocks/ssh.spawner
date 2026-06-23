@@ -1,0 +1,9 @@
+#!/bin/bash
+# Mock ssh.spawner: logs invocation and exits
+# The real spawner sets up env and launches the binary on worker nodes.
+# We just record what was called, plus any tracing env we inherited so
+# the local-launch path (where GASPI_TRACE is set on nohup's environment,
+# not embedded in the command string) can be asserted in tests.
+
+echo "MOCK_SPAWNER args=$*" >> "$MOCK_LOG"
+echo "MOCK_SPAWNER GASPI_TRACE=${GASPI_TRACE:-<unset>}" >> "$MOCK_LOG"

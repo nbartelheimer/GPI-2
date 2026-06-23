@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -21,6 +21,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_Dev.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
+#include "GPI2_Trace.h"
 #include "PGASPI.h"
 
 #pragma weak gaspi_passive_transfer_size_min = pgaspi_passive_transfer_size_min
@@ -68,10 +69,13 @@ pgaspi_passive_send (const gaspi_segment_id_t segment_id_local,
                           gctx->config->passive_transfer_size_max);
   GASPI_VERIFY_RANK (rank);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_PASSIVE_SEND);
+
   gaspi_return_t eret = GASPI_ERROR;
 
   if (lock_gaspi_tout (&gctx->lockPS, timeout_ms))
   {
+    GPI2_TRACE_END (GPI2_EV_PASSIVE_SEND);
     return GASPI_TIMEOUT;
   }
 
@@ -95,6 +99,7 @@ pgaspi_passive_send (const gaspi_segment_id_t segment_id_local,
 
 endL:
   unlock_gaspi (&gctx->lockPS);
+  GPI2_TRACE_END (GPI2_EV_PASSIVE_SEND);
   return eret;
 }
 
@@ -116,8 +121,11 @@ pgaspi_passive_receive (const gaspi_segment_id_t segment_id_local,
                           gctx->rank, GASPI_MIN_TSIZE_P,
                           gctx->config->passive_transfer_size_max);
 
+  GPI2_TRACE_BEGIN (GPI2_EV_PASSIVE_RECV);
+
   if (lock_gaspi_tout (&gctx->lockPR, timeout_ms))
   {
+    GPI2_TRACE_END (GPI2_EV_PASSIVE_RECV);
     return GASPI_TIMEOUT;
   }
 
@@ -128,5 +136,6 @@ pgaspi_passive_receive (const gaspi_segment_id_t segment_id_local,
 
   unlock_gaspi (&gctx->lockPR);
 
+  GPI2_TRACE_END (GPI2_EV_PASSIVE_RECV);
   return eret;
 }

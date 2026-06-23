@@ -1,5 +1,5 @@
 /*
-  Copyright (c) Fraunhofer ITWM, 2013-2025
+  Copyright (c) Fraunhofer ITWM, 2013-2026
 
   This file is part of GPI-2.
 
@@ -24,6 +24,7 @@
 #include "GPI2_Dev.h"
 #include "GPI2_SN.h"
 #include "GPI2_Stats.h"
+#include "GPI2_Trace.h"
 #include "GPI2_Sys.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
@@ -218,6 +219,9 @@ pgaspi_queue_create (gaspi_queue_id_t * const queue_id,
     }
   }
 
+  /* Set state of the queue */
+  gctx->state_vec_queue[*queue_id] = GASPI_STATE_HEALTHY;
+
   /* Increment queue counter */
   __sync_fetch_and_add (&(gctx->num_queues), 1);
 
@@ -243,6 +247,9 @@ pgaspi_queue_delete (const gaspi_queue_id_t queue_id)
     unlock_gaspi (&(gctx->ctx_lock));
     return GASPI_ERR_DEVICE;
   }
+
+  /* Mark queue as unavailable (using GASPI_STATE_CORRUPT per spec) */
+  gctx->state_vec_queue[queue_id] = GASPI_STATE_CORRUPT;
 
   /* Decrement queue counter */
   __sync_fetch_and_sub (&(gctx->num_queues), 1);
@@ -298,6 +305,8 @@ pgaspi_write (const gaspi_segment_id_t segment_id_local,
   GASPI_VERIFY_COMM_SIZE (size, segment_id_local, segment_id_remote, rank,
                           GASPI_MIN_TSIZE_C, gctx->config->transfer_size_max);
 
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_WRITE);
+
   gaspi_return_t eret = GASPI_ERROR;
 
   if (GASPI_ENDPOINT_DISCONNECTED == gctx->ep_conn[rank].cstat)
@@ -305,17 +314,20 @@ pgaspi_write (const gaspi_segment_id_t segment_id_local,
     eret = pgaspi_connect ((gaspi_rank_t) rank, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
+      GPI2_TRACE_END_HOT (GPI2_EV_WRITE);
       return eret;
     }
   }
 
   if (size == 0)
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_WRITE);
     return GASPI_SUCCESS;
   }
 
   if (lock_gaspi_tout (&gctx->lockC[queue], timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_WRITE);
     return GASPI_TIMEOUT;
   }
 
@@ -334,6 +346,7 @@ pgaspi_write (const gaspi_segment_id_t segment_id_local,
 
 endL:
   unlock_gaspi (&gctx->lockC[queue]);
+  GPI2_TRACE_END_HOT (GPI2_EV_WRITE);
   return eret;
 }
 
@@ -356,6 +369,8 @@ pgaspi_read (const gaspi_segment_id_t segment_id_local,
   GASPI_VERIFY_COMM_SIZE (size, segment_id_local, segment_id_remote, rank,
                           GASPI_MIN_TSIZE_C, gctx->config->transfer_size_max);
 
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_READ);
+
   gaspi_return_t eret = GASPI_ERROR;
 
   if (GASPI_ENDPOINT_DISCONNECTED == gctx->ep_conn[rank].cstat)
@@ -363,17 +378,20 @@ pgaspi_read (const gaspi_segment_id_t segment_id_local,
     eret = pgaspi_connect ((gaspi_rank_t) rank, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
+      GPI2_TRACE_END_HOT (GPI2_EV_READ);
       return eret;
     }
   }
 
   if (size == 0)
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_READ);
     return GASPI_SUCCESS;
   }
 
   if (lock_gaspi_tout (&gctx->lockC[queue], timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_READ);
     return GASPI_TIMEOUT;
   }
 
@@ -392,6 +410,7 @@ pgaspi_read (const gaspi_segment_id_t segment_id_local,
 
 endL:
   unlock_gaspi (&gctx->lockC[queue]);
+  GPI2_TRACE_END_HOT (GPI2_EV_READ);
   return eret;
 }
 
@@ -402,6 +421,8 @@ pgaspi_wait (const gaspi_queue_id_t queue,
 {
   GASPI_VERIFY_INIT ("gaspi_wait");
   GASPI_VERIFY_QUEUE (queue);
+
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_WAIT);
 
   /* We need to start timing before the lock to include contention in
      lock when execution is multithreaded */
@@ -431,6 +452,7 @@ endL:
   GPI2_STATS_INC_TIMER (GASPI_STATS_TIME_WAIT,
                         GPI2_STATS_GET_TIMER (GASPI_WAIT_TIMER));
 
+  GPI2_TRACE_END_HOT (GPI2_EV_WAIT);
   return eret;
 }
 
@@ -489,6 +511,8 @@ pgaspi_write_list (const gaspi_number_t num,
 {
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
 
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_WRITE_LIST);
+
   gaspi_return_t eret = GASPI_ERROR;
 
 #ifdef DEBUG
@@ -508,12 +532,14 @@ pgaspi_write_list (const gaspi_number_t num,
     eret = pgaspi_connect ((gaspi_rank_t) rank, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
+      GPI2_TRACE_END_HOT (GPI2_EV_WRITE_LIST);
       return eret;
     }
   }
 
   if (lock_gaspi_tout (&gctx->lockC[queue], timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_WRITE_LIST);
     return GASPI_TIMEOUT;
   }
 
@@ -529,6 +555,7 @@ pgaspi_write_list (const gaspi_number_t num,
 
 endL:
   unlock_gaspi (&gctx->lockC[queue]);
+  GPI2_TRACE_END_HOT (GPI2_EV_WRITE_LIST);
   return eret;
 }
 
@@ -545,6 +572,8 @@ pgaspi_read_list (const gaspi_number_t num,
                   const gaspi_timeout_t timeout_ms)
 {
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
+
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_READ_LIST);
 
   gaspi_return_t eret = GASPI_ERROR;
 
@@ -566,12 +595,14 @@ pgaspi_read_list (const gaspi_number_t num,
     eret = pgaspi_connect ((gaspi_rank_t) rank, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
+      GPI2_TRACE_END_HOT (GPI2_EV_READ_LIST);
       return eret;
     }
   }
 
   if (lock_gaspi_tout (&gctx->lockC[queue], timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_READ_LIST);
     return GASPI_TIMEOUT;
   }
 
@@ -587,6 +618,7 @@ pgaspi_read_list (const gaspi_number_t num,
 
 endL:
   unlock_gaspi (&gctx->lockC[queue]);
+  GPI2_TRACE_END_HOT (GPI2_EV_READ_LIST);
   return eret;
 }
 
@@ -613,6 +645,9 @@ pgaspi_notify (const gaspi_segment_id_t segment_id_remote,
   }
 
   GASPI_VERIFY_NOTIFICATION_NUM (notification_id);
+
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_NOTIFY);
+
   gaspi_return_t eret = GASPI_ERROR;
 
   if (GASPI_ENDPOINT_DISCONNECTED == gctx->ep_conn[rank].cstat)
@@ -620,12 +655,14 @@ pgaspi_notify (const gaspi_segment_id_t segment_id_remote,
     eret = pgaspi_connect ((gaspi_rank_t) rank, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
+      GPI2_TRACE_END_HOT (GPI2_EV_NOTIFY);
       return eret;
     }
   }
 
   if (lock_gaspi_tout (&gctx->lockC[queue], timeout_ms))
   {
+    GPI2_TRACE_END_HOT (GPI2_EV_NOTIFY);
     return GASPI_TIMEOUT;
   }
 
@@ -641,6 +678,7 @@ pgaspi_notify (const gaspi_segment_id_t segment_id_remote,
 
 endL:
   unlock_gaspi (&gctx->lockC[queue]);
+  GPI2_TRACE_END_HOT (GPI2_EV_NOTIFY);
   return eret;
 }
 
@@ -658,6 +696,8 @@ pgaspi_notify_waitsome (const gaspi_segment_id_t segment_id_local,
   GASPI_VERIFY_SEGMENT (segment_id_local);
   GASPI_VERIFY_NULL_PTR (gctx->rrmd[segment_id_local]);
   GASPI_VERIFY_NULL_PTR (first_id);
+
+  GPI2_TRACE_BEGIN_HOT (GPI2_EV_NOTIFY_WAITSOME);
 
   /* We need to start timing before the lock to include contention in
      lock when execution is multithreaded */
@@ -770,6 +810,7 @@ pgaspi_notify_waitsome (const gaspi_segment_id_t segment_id_local,
   GPI2_STATS_INC_TIMER (GASPI_STATS_TIME_WAITSOME,
                         GPI2_STATS_GET_TIMER (GASPI_WAITSOME_TIMER));
 
+  GPI2_TRACE_END_HOT (GPI2_EV_NOTIFY_WAITSOME);
   return GASPI_SUCCESS;
 }
 

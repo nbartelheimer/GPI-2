@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -20,7 +20,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #define _GPI2_VERSION_H_ 1
 
 #define GASPI_MAJOR_VERSION (1)
-#define GASPI_MINOR_VERSION (6)
+#define GASPI_MINOR_VERSION (7)
 #define GASPI_REVISION (0)
 
 #define GASPI_VERSION \

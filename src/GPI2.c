@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -38,9 +38,11 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GPI2_SEG.h"
 #include "GPI2_SN.h"
 #include "GPI2_Sys.h"
+#include "GPI2_Topology.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
 #include "GPI2_VERSION.h"
+#include "GPI2_Trace.h"
 #include "PGASPI.h"
 
 extern gaspi_config_t glb_gaspi_cfg;
@@ -61,6 +63,10 @@ pgaspi_version (float *const version)
 gaspi_return_t
 pgaspi_set_socket_affinity (const gaspi_uchar sock)
 {
+#ifdef __riscv
+  GASPI_PRINT_WARNING ("NUMA affinity setting not yet supported on RISC-V.");
+  return GASPI_SUCCESS;
+#else
   cpu_set_t sock_mask;
 
   if (sock >= GASPI_MAX_NUMAS)
@@ -87,6 +93,7 @@ pgaspi_set_socket_affinity (const gaspi_uchar sock)
   }
 
   return GASPI_SUCCESS;
+#endif
 }
 
 #pragma weak gaspi_numa_socket = pgaspi_numa_socket
@@ -124,7 +131,8 @@ pgaspi_create_error_vector (gaspi_context_t * gctx)
       //rollback and release memory
       for (int j = i - 1; j >= 0; --j)
       {
-        free (gctx->state_vec[i]);
+        free (gctx->state_vec[j]);
+        gctx->state_vec[j] = NULL;
       }
 
       return GASPI_ERR_MEMALLOC;
@@ -163,6 +171,10 @@ pgaspi_init_core (gaspi_context_t * const gctx)
 
   /* Set number of "created" communication queues */
   gctx->num_queues = gctx->config->queue_num;
+  for (gaspi_number_t i = 0; i < gctx->num_queues; i++)
+  {
+    gctx->state_vec_queue[i] = GASPI_STATE_HEALTHY;
+  }
 
   gctx->ep_conn =
     (gaspi_endpoint_conn_t *) calloc (gctx->tnc,
@@ -221,70 +233,9 @@ pgaspi_parse_machinefile (gaspi_context_t * const gctx)
     return -1;
   }
 
-  //read hostnames
-  char *line = NULL;
-  size_t len = 0;
-  int lsize;
+  gctx->topology = gpi2_topology_from_file (gctx->mfile, gctx->tnc);
 
-  FILE *fp = fopen (gctx->mfile, "r");
-
-  if (fp == NULL)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to open machinefile");
-    return -1;
-  }
-
-  free (gctx->hn_poff);
-
-  gctx->hn_poff = (char *) calloc (gctx->tnc, 65);
-  if (gctx->hn_poff == NULL)
-  {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory");
-    fclose (fp);
-    return -1;
-  }
-
-  gctx->poff = gctx->hn_poff + gctx->tnc * 64;
-
-  int id = 0;
-
-  while ((lsize = getline (&line, &len, fp)) != -1)
-  {
-    //we assume a single hostname per line
-    if ((lsize < 2) || (lsize >= 64))
-      continue;
-
-    int inList = 0;
-
-    for (int i = 0; i < id; i++)
-    {
-      //already in list ?
-      const int hnlen =
-        MAX (strlen (gctx->hn_poff + i * 64), MIN (strlen (line) - 1, 63));
-      if (strncmp (gctx->hn_poff + i * 64, line, hnlen) == 0)
-      {
-        inList++;
-      }
-    }
-
-    if (inList >= GASPI_MAX_PPN)
-    {
-      GASPI_DEBUG_PRINT_ERROR
-        ("Too many entries for single host in machinefile (max %d)",
-         GASPI_MAX_PPN);
-      return -1;
-    }
-
-    gctx->poff[id] = inList;
-
-    strncpy (gctx->hn_poff + id * 64, line, MIN (lsize - 1, 63));
-    id++;
-  }
-
-  fclose (fp);
-  free (line);
-
-  return 0;
+  return gctx->topology == NULL;
 }
 
 #pragma weak gaspi_proc_init = pgaspi_proc_init
@@ -294,22 +245,29 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
   gaspi_return_t eret = GASPI_ERROR;
   gaspi_context_t *const gctx = &glb_gaspi_ctx;
 
-  if (gctx->init)
-  {
-    return GASPI_ERR_INITED;
-  }
-
   if (lock_gaspi_tout (&(gctx->ctx_lock), timeout_ms))
   {
     return GASPI_TIMEOUT;
   }
 
+  if (gctx->init)
+  {
+    unlock_gaspi (&(gctx->ctx_lock));
+    return GASPI_ERR_INITED;
+  }
+
   gctx->config = &glb_gaspi_cfg;
+
+  gpi2_trace_init (gctx->rank);
+  GPI2_TRACE_BEGIN (GPI2_EV_PROC_INIT);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_SN_SETUP);
 
   if (gctx->sn_init == 0)
   {
     //timing
     gctx->mhz = gaspi_get_cpufreq();
+#ifndef __riscv
     if (gctx->mhz == 0.0f)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to get CPU frequency");
@@ -317,6 +275,7 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     }
 
     gctx->cycles_to_msecs = 1.0f / (gctx->mhz * 1000.0f);
+#endif
 
     if (gaspi_handle_env (gctx))
     {
@@ -335,6 +294,10 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     gctx->sn_init = 1;
   }
 
+  GPI2_TRACE_END (GPI2_EV_SN_SETUP);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_PARSE_MFILE);
+
   if (gctx->rank == 0 && gctx->dev_init == 0)
   {
     if (pgaspi_parse_machinefile (gctx) != 0)
@@ -344,6 +307,10 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     }
   }
 
+  GPI2_TRACE_END (GPI2_EV_PARSE_MFILE);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_BROADCAST_TOPO);
+
   eret = gaspi_sn_broadcast_topology (gctx, timeout_ms);
   if (eret != GASPI_SUCCESS)
   {
@@ -351,11 +318,17 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     goto errL;
   }
 
+  GPI2_TRACE_END (GPI2_EV_BROADCAST_TOPO);
+
+  GPI2_TRACE_BEGIN (GPI2_EV_INIT_CORE);
+
   eret = pgaspi_init_core (gctx);
   if (eret != GASPI_SUCCESS)
   {
     goto errL;
   }
+
+  GPI2_TRACE_END (GPI2_EV_INIT_CORE);
 
   /* Unleash SN thread */
   __sync_fetch_and_add (&(gctx->master_topo_data), 1);
@@ -365,10 +338,14 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
   /* Wait for SN to initialize (locally) */
   enum gaspi_sn_status _sn_status;
 
+  GPI2_TRACE_BEGIN (GPI2_EV_SN_WAIT);
+
   while ((_sn_status = gaspi_sn_status_get()) == GASPI_SN_STATE_INIT)
   {
     GASPI_DELAY();
   }
+
+  GPI2_TRACE_END (GPI2_EV_SN_WAIT);
 
   if (_sn_status != GASPI_SN_STATE_OK)
   {
@@ -380,12 +357,17 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
 
   unlock_gaspi (&(gctx->ctx_lock));
 
+  GPI2_TRACE_BEGIN (GPI2_EV_BUILD_INFRA);
+
   if (gctx->config->build_infrastructure)
   {
     eret = pgaspi_group_all_local_create (gctx, timeout_ms);
     if (eret != GASPI_SUCCESS)
     {
       GASPI_DEBUG_PRINT_ERROR ("Failed to create GASPI_GROUP_ALL.");
+      GPI2_TRACE_END (GPI2_EV_BUILD_INFRA);
+      GPI2_TRACE_END (GPI2_EV_PROC_INIT);
+      return eret;
     }
 
     /* configuration tells us to pre-connect */
@@ -398,6 +380,8 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
         if ((eret =
              pgaspi_connect ((gaspi_rank_t) i, timeout_ms)) != GASPI_SUCCESS)
         {
+          GPI2_TRACE_END (GPI2_EV_BUILD_INFRA);
+          GPI2_TRACE_END (GPI2_EV_PROC_INIT);
           return eret;
         }
       }
@@ -413,9 +397,13 @@ pgaspi_proc_init (const gaspi_timeout_t timeout_ms)
     eret = GASPI_SUCCESS;
   }
 
+  GPI2_TRACE_END (GPI2_EV_BUILD_INFRA);
+  GPI2_TRACE_END (GPI2_EV_PROC_INIT);
+
   return eret;
 
 errL:
+  GPI2_TRACE_END (GPI2_EV_PROC_INIT);
   unlock_gaspi (&(gctx->ctx_lock));
 
   return eret;
@@ -458,13 +446,12 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
   /* Delete extra queues created */
   if (gctx->num_queues != gctx->config->queue_num)
   {
-//    for (gaspi_uint q = gctx->config->queue_num; q < gctx->num_queues; q++)
-    for (gaspi_uint q = gctx->num_queues; q > gctx->config->queue_num; q--)
+    for (gaspi_uint q = gctx->config->queue_num; q < gctx->num_queues; q++)
     {
       if (pgaspi_dev_comm_queue_delete (gctx, q) != 0)
       {
         GASPI_DEBUG_PRINT_ERROR ("Failed to destroy queue.");
-        return -1;
+        return GASPI_ERR_DEVICE;
       }
     }
   }
@@ -473,7 +460,7 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
   if (pgaspi_dev_unregister_mem (gctx, &(gctx->nsrc)) != 0)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to de-register internal memory");
-    return -1;
+    return GASPI_ERR_DEVICE;
   }
 
   free (gctx->nsrc.notif_spc.buf);
@@ -499,6 +486,15 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
   }
   free (gctx->rrmd);
 
+  if (gctx->topology != NULL)
+  {
+    gpi2_topology_free (gctx->topology);
+    gctx->topology = NULL;
+  }
+
+  /* Release ctx_lock for group deletion (which acquires its own locks)
+   * and re-acquire before device cleanup. The caller (pgaspi_proc_term)
+   * expects ctx_lock to be held on return. */
   unlock_gaspi (&(gctx->ctx_lock));
 
   /* Delete groups */
@@ -523,10 +519,7 @@ pgaspi_cleanup_core (gaspi_context_t * const gctx)
     return GASPI_ERR_DEVICE;
   }
 
-  free (gctx->hn_poff);
-  gctx->hn_poff = NULL;
-
-  //  free (gctx->ep_conn);
+  free (gctx->ep_conn);
   gctx->ep_conn = NULL;
 
   for (int i = 0; i < GASPI_MAX_QP + 3; i++)
@@ -548,6 +541,8 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
 
   GASPI_VERIFY_INIT ("gaspi_proc_term");
 
+  GPI2_TRACE_BEGIN (GPI2_EV_PROC_TERM);
+
   if (lock_gaspi_tout (&(gctx->ctx_lock), timeout))
   {
     return GASPI_TIMEOUT;
@@ -559,9 +554,9 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
   {
     for (int i = 0; i < gctx->tnc; i++)
     {
-      shutdown (gctx->sockfd[i], 2);
       if (gctx->sockfd[i] > 0)
       {
+        shutdown (gctx->sockfd[i], SHUT_RDWR);
         close (gctx->sockfd[i]);
       }
     }
@@ -582,6 +577,9 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
 
   pgaspi_statistic_print_counters();
 
+  GPI2_TRACE_END (GPI2_EV_PROC_TERM);
+  gpi2_trace_flush (gctx->rank);
+
   if (pgaspi_cleanup_core (gctx) != GASPI_SUCCESS)
   {
     goto errL;
@@ -593,6 +591,8 @@ pgaspi_proc_term (const gaspi_timeout_t timeout)
   return GASPI_SUCCESS;
 
 errL:
+  GPI2_TRACE_END (GPI2_EV_PROC_TERM);
+  gpi2_trace_flush (gctx->rank);
   unlock_gaspi (&(gctx->ctx_lock));
   return GASPI_ERROR;
 }
@@ -709,12 +709,9 @@ pgaspi_proc_local_num (gaspi_rank_t * const local_num)
     return GASPI_ERROR;
   }
 
-  while (gctx->poff[rank + 1] != 0 && (rank < gctx->tnc - 1))
-  {
-    rank++;
-  }
+  uint32_t my_host = gctx->topology->hosts_ids[rank];
 
-  *local_num = (gaspi_rank_t) (gctx->poff[rank] + 1);
+  *local_num = (gaspi_rank_t) (gctx->topology->count_per_host[my_host]);
 
   return GASPI_SUCCESS;
 }
@@ -754,6 +751,10 @@ pgaspi_time_get (gaspi_time_t * const wtime)
   if (!(gctx->init))
   {
     const float cpu_mhz = gaspi_get_cpufreq();
+    if (cpu_mhz == 0.0f)
+    {
+      return GASPI_ERROR;
+    }
 
     cycles_to_msecs = 1.0f / (cpu_mhz * 1000.0f);
   }

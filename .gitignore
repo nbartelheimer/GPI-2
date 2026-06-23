@@ -56,6 +56,9 @@ config/lt~obsolete.m4
 
 Makefile
 
+# Device marker generated from tests/defs/active_device.in by configure
+tests/defs/active_device
+
 ### Autotools Patch ###
 
 ### C ###

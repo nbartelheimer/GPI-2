@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -197,6 +197,10 @@ int tcp_dev_is_valid_state (unsigned short);
 int tcp_dev_connect_to (const int i, char const *const host, const int port);
 
 char *tcp_dev_get_local_ip (char const *const host);
+
+const char *tcp_dev_get_unix_path (void);
+
+int tcp_dev_connect_unix (const char *path);
 
 char *tcp_dev_get_local_if (char *ip);
 

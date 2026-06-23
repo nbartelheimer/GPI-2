@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -52,9 +52,9 @@ int
 pgaspi_dev_connect_context (gaspi_context_t const *const gctx,
                             const int i)
 {
-  return tcp_dev_connect_to (i, pgaspi_gethostname (i),
+  return tcp_dev_connect_to (i, pgaspi_gethostname (gctx, i),
                              gctx->config->dev_config.params.tcp.port +
-                             gctx->poff[i]);
+                             gctx->topology->local_ids[i]);
 }
 
 int
@@ -129,9 +129,9 @@ static void
 pgaspi_tcp_dev_print_info (gaspi_context_t const *const gctx)
 {
   printf ("<<<<<<<<<<<<<<<< TCP-info >>>>>>>>>>>>>>>>>>>\n");
-  printf ("  Hostname: %s\n", pgaspi_gethostname (gctx->rank));
+  printf ("  Hostname: %s\n", pgaspi_gethostname (gctx, gctx->rank));
 
-  char *ip = tcp_dev_get_local_ip (pgaspi_gethostname (gctx->rank));
+  char *ip = tcp_dev_get_local_ip (pgaspi_gethostname (gctx, gctx->rank));
 
   if (ip != NULL)
   {
@@ -186,6 +186,23 @@ pgaspi_dev_init_core (gaspi_context_t * const gctx)
     return -1;
   }
 
+  /* Wait for the device thread to become ready before making any Unix socket
+   * connections: the AF_UNIX listener is only bound once the thread reaches
+   * STATUS_UP (after tcp_dev_unix_path_buf is populated and the socket is
+   * listening). */
+  {
+    gaspi_tcp_dev_status_t _dev_status = gaspi_tcp_dev_status_get ();
+    while (GASPI_TCP_DEV_STATUS_DOWN == _dev_status)
+    {
+      GASPI_DELAY ();
+      _dev_status = gaspi_tcp_dev_status_get ();
+    }
+    if (GASPI_TCP_DEV_STATUS_FAILED == _dev_status)
+    {
+      return -1;
+    }
+  }
+
   /* user did not choose so we set the network type */
   if (!gctx->config->user_net)
   {
@@ -197,11 +214,10 @@ pgaspi_dev_init_core (gaspi_context_t * const gctx)
     pgaspi_tcp_dev_print_info (gctx);
   }
 
-  /* Passive channel (SRQ) */
+  /* Passive channel (SRQ): self-connect via Unix abstract socket so the
+   * device thread can multiplex it on the same epoll as remote peers. */
   tcp_dev_ctx->srqP =
-    gaspi_sn_connect2port ("localhost",
-                           gctx->config->dev_config.params.tcp.port +
-                           gctx->local_rank, CONN_TIMEOUT);
+    tcp_dev_connect_unix (tcp_dev_get_unix_path ());
   if (tcp_dev_ctx->srqP == -1)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to create passive channel connection");
@@ -285,19 +301,6 @@ pgaspi_dev_init_core (gaspi_context_t * const gctx)
   if (tcp_dev_ctx->qpP == NULL)
   {
     GASPI_DEBUG_PRINT_ERROR ("Failed to create queue for passive.");
-    return -1;
-  }
-
-  gaspi_tcp_dev_status_t _dev_status = gaspi_tcp_dev_status_get();
-
-  while (GASPI_TCP_DEV_STATUS_DOWN == _dev_status)
-  {
-    GASPI_DELAY();
-    _dev_status = gaspi_tcp_dev_status_get();
-  }
-
-  if (GASPI_TCP_DEV_STATUS_FAILED == _dev_status)
-  {
     return -1;
   }
 

@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -112,7 +112,7 @@ gaspi_config_t glb_gaspi_cfg =
   GASPI_MAX_TSIZE_P,                //passive_transfer_size_max;
   GASPI_DEFAULT_ALLREDUCE_BUF_SIZE, //allreduce_buf_size;
   GASPI_DEFAULT_ALLREDUCE_ELEM_MAX, //allreduce_elem_max;
-  GASPI_RW_LIST_ELEM_MAX, // maximum elements in lists
+  GASPI_RW_LIST_ELEM_MAX,           //rw_list_elem_max;
   GASPI_TOPOLOGY_STATIC,            //build_infrastructure;
   NULL                              //user_defined
 };
@@ -322,6 +322,7 @@ pgaspi_config_set (const gaspi_config_t nconf)
       ("The current implementation does not consider the use of the parameter\
  user_defined");
   }
+
 
   return GASPI_SUCCESS;
 }

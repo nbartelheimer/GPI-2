@@ -1,5 +1,5 @@
 /*
-Copyright (c) Fraunhofer ITWM, 2013-2025
+Copyright (c) Fraunhofer ITWM, 2013-2026
 
 This file is part of GPI-2.
 
@@ -25,6 +25,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include <netinet/tcp.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include "GASPI_types.h"
 #include "GPI2_SN.h"
@@ -49,6 +51,56 @@ static int tcp_dev_port_in_use;
 static int tcp_dev_num_peers;
 static int tcp_dev_id;
 pthread_t tcp_dev_thread;
+
+/* Abstract-namespace Unix path for self-connections.
+ * Populated by tcp_virt_dev before self-connections are made. */
+#define TCP_DEV_UNIX_PATH_LEN 108
+static char tcp_dev_unix_path_buf[TCP_DEV_UNIX_PATH_LEN];
+
+/* Fill an abstract-namespace path for a given port number.
+ * path[0] == '\0' signals abstract namespace; rest is the name. */
+static void
+tcp_dev_unix_path (char path[TCP_DEV_UNIX_PATH_LEN], int port)
+{
+  memset (path, 0, TCP_DEV_UNIX_PATH_LEN);
+  snprintf (path + 1, TCP_DEV_UNIX_PATH_LEN - 1, "gpi2-tcp-%d", port);
+}
+
+/* Connect to an AF_UNIX abstract-namespace socket.
+ * Returns the connected fd, or -1 on error. */
+int
+tcp_dev_connect_unix (const char *path)
+{
+  int sock = socket (AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0)
+  {
+    return -1;
+  }
+
+  struct sockaddr_un addr;
+  memset (&addr, 0, sizeof (addr));
+  addr.sun_family = AF_UNIX;
+  memcpy (addr.sun_path, path, TCP_DEV_UNIX_PATH_LEN);
+
+  socklen_t addrlen = (socklen_t) (offsetof (struct sockaddr_un, sun_path)
+                                   + 1 + strlen (path + 1));
+
+  if (connect (sock, (struct sockaddr *) &addr, addrlen) < 0)
+  {
+    close (sock);
+    return -1;
+  }
+
+  return sock;
+}
+
+/* Return a pointer to the module-level Unix path buffer.
+ * Valid after tcp_virt_dev has initialised tcp_dev_unix_path_buf. */
+const char *
+tcp_dev_get_unix_path (void)
+{
+  return tcp_dev_unix_path_buf;
+}
 
 /* list of remote operations */
 list delayedList =
@@ -225,11 +277,11 @@ tcp_dev_create_queue (struct tcp_cq *send_cq, struct tcp_cq *recv_cq)
     (struct tcp_queue *) malloc (sizeof (struct tcp_queue));
   if (q != NULL)
   {
-    handle =
-      gaspi_sn_connect2port ("localhost", tcp_dev_port_in_use, CONN_TIMEOUT);
+    handle = tcp_dev_connect_unix (tcp_dev_unix_path_buf);
 
     if (handle == -1)
     {
+      GASPI_DEBUG_PRINT_ERROR ("Failed to connect via Unix socket for queue.");
       free (q);
       return NULL;
     }
@@ -372,12 +424,11 @@ char *
 tcp_dev_get_local_ip (char const *const host)
 {
   struct addrinfo hints, *res;
-  struct in_addr addr;
   int err;
 
   memset (&hints, 0, sizeof (hints));
   hints.ai_socktype = SOCK_STREAM;
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_UNSPEC;
 
   if ((err = getaddrinfo (host, NULL, &hints, &res)) != 0)
   {
@@ -385,11 +436,24 @@ tcp_dev_get_local_ip (char const *const host)
     return NULL;
   }
 
-  addr.s_addr = ((struct sockaddr_in *) (res->ai_addr))->sin_addr.s_addr;
+  static char ip_buf[INET6_ADDRSTRLEN];
+
+  if (res->ai_family == AF_INET6)
+  {
+    inet_ntop (AF_INET6,
+               &((struct sockaddr_in6 *) res->ai_addr)->sin6_addr,
+               ip_buf, sizeof (ip_buf));
+  }
+  else
+  {
+    inet_ntop (AF_INET,
+               &((struct sockaddr_in *) res->ai_addr)->sin_addr,
+               ip_buf, sizeof (ip_buf));
+  }
 
   freeaddrinfo (res);
 
-  return inet_ntoa (addr);
+  return ip_buf;
 }
 
 //TODO: ideally we would remove the need for argument i
@@ -1492,7 +1556,37 @@ tcp_virt_dev (void *args)
   tcp_dev_port_in_use = dev_args->port;
   tcp_dev_id = dev_args->id;
 
-  int listen_sock = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  /* try dual-stack AF_INET6 first; fall back to AF_INET if the kernel forces
+   * IPV6_V6ONLY (e.g. net.ipv6.bindv6only=1 sysctl). */
+  int use_inet6 = 1;
+  int listen_sock = socket (AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+
+  if (listen_sock >= 0)
+  {
+    int zero = 0;
+    setsockopt (listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof (zero));
+    int val = 1;
+    socklen_t vlen = sizeof (val);
+    getsockopt (listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &val, &vlen);
+    if (val != 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR (
+        "IPv6 dual-stack unavailable (IPV6_V6ONLY forced by sysctl); "
+        "falling back to IPv4.");
+      close (listen_sock);
+      listen_sock = -1;
+      use_inet6 = 0;
+    }
+  }
+  else
+  {
+    use_inet6 = 0;
+  }
+
+  if (listen_sock < 0)
+  {
+    listen_sock = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  }
 
   if (listen_sock < 0)
   {
@@ -1503,17 +1597,8 @@ tcp_virt_dev (void *args)
 
   int opt = 1;
 
-  if (setsockopt (listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof (opt)) <
-      0)
-  {
-    close (listen_sock);
-    GASPI_DEBUG_PRINT_ERROR ("Failed to modify socket.");
-    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
-    return NULL;
-  }
-
-  if (setsockopt (listen_sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof (opt)) <
-      0)
+  if (setsockopt (listen_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof (opt)) < 0
+      || setsockopt (listen_sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof (opt)) < 0)
   {
     close (listen_sock);
     GASPI_DEBUG_PRINT_ERROR ("Failed to modify socket.");
@@ -1523,21 +1608,35 @@ tcp_virt_dev (void *args)
 
   signal (SIGPIPE, SIG_IGN);
 
-  struct sockaddr_in listenAddr = {
-    .sin_family = AF_INET,
-    .sin_port = htons (tcp_dev_port_in_use),
-    .sin_addr.s_addr = htonl (INADDR_ANY)
-  };
-
-  if (bind
-      (listen_sock, (struct sockaddr *) (&listenAddr),
-       sizeof (listenAddr)) < 0)
+  if (use_inet6)
   {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to bind to port %d\n",
-                             tcp_dev_port_in_use);
-    close (listen_sock);
-    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
-    return NULL;
+    struct sockaddr_in6 addr6;
+    memset (&addr6, 0, sizeof (addr6));
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_port   = htons (tcp_dev_port_in_use);
+    addr6.sin6_addr   = in6addr_any;
+    if (bind (listen_sock, (struct sockaddr *) &addr6, sizeof (addr6)) < 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR ("Failed to bind to port %d", tcp_dev_port_in_use);
+      close (listen_sock);
+      gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+      return NULL;
+    }
+  }
+  else
+  {
+    struct sockaddr_in addr4;
+    memset (&addr4, 0, sizeof (addr4));
+    addr4.sin_family      = AF_INET;
+    addr4.sin_port        = htons (tcp_dev_port_in_use);
+    addr4.sin_addr.s_addr = htonl (INADDR_ANY);
+    if (bind (listen_sock, (struct sockaddr *) &addr4, sizeof (addr4)) < 0)
+    {
+      GASPI_DEBUG_PRINT_ERROR ("Failed to bind to port %d", tcp_dev_port_in_use);
+      close (listen_sock);
+      gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+      return NULL;
+    }
   }
 
   gaspi_sn_set_non_blocking (listen_sock);
@@ -1550,9 +1649,44 @@ tcp_virt_dev (void *args)
     return NULL;
   }
 
+  /* AF_UNIX abstract-namespace listener for self-connections. Replaces
+   * "localhost":port TCP self-connects for queue creation and the passive
+   * channel, eliminating IPv4/IPv6 ambiguity on loopback. */
+  tcp_dev_unix_path (tcp_dev_unix_path_buf, tcp_dev_port_in_use);
+
+  int unix_sock = socket (AF_UNIX, SOCK_STREAM, 0);
+  if (unix_sock < 0)
+  {
+    close (listen_sock);
+    GASPI_DEBUG_PRINT_ERROR ("Failed to create Unix socket.");
+    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+    return NULL;
+  }
+
+  {
+    struct sockaddr_un uaddr;
+    memset (&uaddr, 0, sizeof (uaddr));
+    uaddr.sun_family = AF_UNIX;
+    memcpy (uaddr.sun_path, tcp_dev_unix_path_buf, TCP_DEV_UNIX_PATH_LEN);
+    socklen_t ulen = (socklen_t) (offsetof (struct sockaddr_un, sun_path)
+                                  + 1 + strlen (tcp_dev_unix_path_buf + 1));
+    if (bind (unix_sock, (struct sockaddr *) &uaddr, ulen) < 0
+        || listen (unix_sock, SOMAXCONN) < 0)
+    {
+      close (unix_sock);
+      close (listen_sock);
+      GASPI_DEBUG_PRINT_ERROR ("Failed to bind/listen Unix socket.");
+      gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+      return NULL;
+    }
+  }
+
+  gaspi_sn_set_non_blocking (unix_sock);
+
   epollfd = epoll_create (MAX_EVENTS);
   if (epollfd == -1)
   {
+    close (unix_sock);
     close (listen_sock);
     GASPI_DEBUG_PRINT_ERROR ("Failed to create events instance.");
     gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
@@ -1563,6 +1697,7 @@ tcp_virt_dev (void *args)
 
   if (lstate == NULL)
   {
+    close (unix_sock);
     close (listen_sock);
     close (epollfd);
     GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
@@ -1580,7 +1715,34 @@ tcp_virt_dev (void *args)
 
   if (epoll_ctl (epollfd, EPOLL_CTL_ADD, listen_sock, &lev) < 0)
   {
-    GASPI_DEBUG_PRINT_ERROR ("Failed to add socket to event instance.");
+    GASPI_DEBUG_PRINT_ERROR ("Failed to add TCP socket to event instance.");
+    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+    return NULL;
+  }
+
+  tcp_dev_conn_state_t *lstate_unix = malloc (sizeof (tcp_dev_conn_state_t));
+
+  if (lstate_unix == NULL)
+  {
+    close (unix_sock);
+    close (listen_sock);
+    close (epollfd);
+    GASPI_DEBUG_PRINT_ERROR ("Failed to allocate memory.");
+    gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
+    return NULL;
+  }
+
+  lstate_unix->fd = unix_sock;
+  lstate_unix->rank = -2;
+
+  struct epoll_event ulev = {
+    .data.ptr = lstate_unix,
+    .events = EPOLLIN | EPOLLRDHUP
+  };
+
+  if (epoll_ctl (epollfd, EPOLL_CTL_ADD, unix_sock, &ulev) < 0)
+  {
+    GASPI_DEBUG_PRINT_ERROR ("Failed to add Unix socket to event instance.");
     gaspi_tcp_dev_status_set (GASPI_TCP_DEV_STATUS_FAILED);
     return NULL;
   }
@@ -1658,7 +1820,7 @@ tcp_virt_dev (void *args)
         io_err = 1;
       }
 
-      /* new incoming connection */
+      /* new incoming TCP connection from remote peer */
       else if (event_fd == listen_sock)
       {
         while (1)
@@ -1686,6 +1848,38 @@ tcp_virt_dev (void *args)
             close (conn_sock);
             GASPI_DEBUG_PRINT_ERROR
               ("Failed to add connection to events instance");
+          }
+        }
+        continue;
+      }
+      /* new self-connection via Unix socket (queue creation / passive ch.) */
+      else if (event_fd == unix_sock)
+      {
+        while (1)
+        {
+          struct sockaddr_un peer;
+          socklen_t plen = sizeof (peer);
+
+          int conn_sock =
+            accept (unix_sock, (struct sockaddr *) &peer, &plen);
+          if (conn_sock < 0)
+          {
+            if (errno == EAGAIN)
+            {
+              break;
+            }
+
+            GASPI_DEBUG_PRINT_ERROR ("Failed to accept Unix connection.");
+            continue;
+          }
+
+          gaspi_sn_set_non_blocking (conn_sock);
+
+          if (_tcp_dev_add_new_conn (-1, conn_sock, epollfd) == NULL)
+          {
+            close (conn_sock);
+            GASPI_DEBUG_PRINT_ERROR
+              ("Failed to add Unix connection to events instance");
           }
         }
         continue;
