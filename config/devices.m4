@@ -2,7 +2,19 @@
 # Check and select device
 # ----------------------------------
 AC_DEFUN([ACX_USABLE_DEVICE],[
-        if test x${with_infiniband} != xno -a x${with_ethernet} != xno; then
+        device_count=0
+        for device in "$with_infiniband" "$with_ofi" "$with_ethernet" "$with_portals4"; do
+           if test "x$device" != xno; then
+              device_count=$((device_count + 1))
+           fi
+        done
+        if test "$device_count" -gt 1; then
+           AC_MSG_ERROR([Only one device may be selected])
+        fi
+        if test "x$with_portals4" != xno; then
+           TITLE([Checking for Portals4])
+           ACX_PORTALS4
+        elif test x${with_infiniband} != xno -a x${with_ethernet} != xno; then
            TITLE([Checking for device(s):])
            AC_MSG_ERROR([Concurrently Infiniband and Ethernet is not supported])
         elif test x${with_infiniband} != xno -a x${with_ethernet} = xno; then
@@ -39,6 +51,10 @@ AC_DEFUN([ACX_USABLE_DEVICE],[
 
 	# COPY DEFAULT FILES FOR TESTING
         AM_CONDITIONAL([WITH_OFI], [test x${HAVE_OFI} = x1])
+        AM_CONDITIONAL([WITH_PORTALS4], [test x${HAVE_PORTALS4} = x1])
+        if test x${HAVE_PORTALS4} = x1; then
+           options="$options Portals4"
+        fi
         if [test x${HAVE_OFI} = x1]; then
           options="$options OFI"
         fi
@@ -54,6 +70,7 @@ AC_DEFUN([ACX_USABLE_DEVICE],[
 	# --with-* request, which may differ after the IB->Ethernet fallback).
 	AS_IF([test x${HAVE_INFINIBAND} = x1], [GPI2_DEVICE_NAME=ib],
 	      [test x${HAVE_OFI} = x1],        [GPI2_DEVICE_NAME=ofi],
+	      [test x${HAVE_PORTALS4} = x1],   [GPI2_DEVICE_NAME=portals4],
 	      [test x${HAVE_TCP} = x1],        [GPI2_DEVICE_NAME=tcp],
 	      [GPI2_DEVICE_NAME=unknown])
 	AC_SUBST([GPI2_DEVICE_NAME])

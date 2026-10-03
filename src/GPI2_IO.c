@@ -220,7 +220,7 @@ pgaspi_queue_create (gaspi_queue_id_t * const queue_id,
   }
 
   /* Set state of the queue */
-  gctx->state_vec_queue[*queue_id] = GASPI_STATE_HEALTHY;
+  gctx->state_vec_queue[next_avail_q] = GASPI_STATE_HEALTHY;
 
   /* Increment queue counter */
   __sync_fetch_and_add (&(gctx->num_queues), 1);

@@ -8,3 +8,4 @@ Description: GPI-2 library
 Version: @VERSION@
 Cflags: -I${includedir}
 Libs: -L${libdir} -lGPI2
+Libs.private: @ac_lib_portals4@ @ac_lib_infiniband@ @ac_lib_ofi@ @ac_lib_mpi@ -lrt -pthread

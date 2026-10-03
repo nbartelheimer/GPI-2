@@ -24,6 +24,7 @@ test_defs_pkgdata_DATA = $(abs_top_srcdir)/tests/defs/barrier_recover.def \
 		$(abs_top_srcdir)/tests/defs/cmd_line_args.def \
 		$(abs_top_srcdir)/tests/defs/default_ib.def \
 		$(abs_top_srcdir)/tests/defs/default_tcp.def \
+		$(abs_top_srcdir)/tests/defs/default_portals4.def \
 		$(abs_top_builddir)/tests/defs/active_device
 
 # INSTALL RUN SCRIPT
@@ -32,10 +33,15 @@ test_pkgdata_SCRIPTS = $(abs_top_srcdir)/tests/runtests.sh
 # COPY DEVICE DEFAULTS
 if WITH_INFINIBAND
 defaults:
-	cp $(prefix)/tests/defs/default_ib.def $(prefix)/tests/defs/default.def
+	cp $(DESTDIR)$(prefix)/tests/defs/default_ib.def $(DESTDIR)$(prefix)/tests/defs/default.def
+else
+if WITH_PORTALS4
+defaults:
+	cp $(DESTDIR)$(prefix)/tests/defs/default_portals4.def $(DESTDIR)$(prefix)/tests/defs/default.def
 else
 defaults:
-	cp $(prefix)/tests/defs/default_tcp.def $(prefix)/tests/defs/default.def
+	cp $(DESTDIR)$(prefix)/tests/defs/default_tcp.def $(DESTDIR)$(prefix)/tests/defs/default.def
+endif
 endif
 install-data-hook:
 	$(MAKE) defaults

@@ -159,6 +159,10 @@ AC_ARG_WITH([ofi],[AS_HELP_STRING([--with-ofi], [compile for OFI])],
 [with_ofi=$withval],
 [with_ofi=no])
 
+AC_ARG_WITH([portals4],
+  [AS_HELP_STRING([--with-portals4[=PREFIX]], [compile for Portals4])],
+  [with_portals4=$withval], [with_portals4=no])
+
 # CHECKS ETHERNET
 AC_ARG_WITH([ethernet],[AS_HELP_STRING([--with-ethernet], [compile for ethernet])],
 		       [with_ethernet=$withval],

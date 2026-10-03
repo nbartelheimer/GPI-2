@@ -144,7 +144,8 @@ extern "C"
     GASPI_ETHERNET = 2, /* Ethernet (TCP) */
     GASPI_GEMINI = 3,   /* Cray Gemini (not implemented) */
     GASPI_ARIES = 4,    /* Cray Aries (not implemented) */
-    GASPI_OFI = 5       /* Openfabrics libfabric */
+    GASPI_OFI = 5,      /* Openfabrics libfabric */
+    GASPI_PORTALS4 = 6
   } gaspi_network_t;
 
   /**
@@ -182,6 +183,11 @@ extern "C"
         int provider_info; /* print detailed provider info */
         int progress_auto; /* use auto-progress, if available */
       } ofi;
+
+      struct
+      {
+        gaspi_uint iface;
+      } portals4;
     } params;
   } gaspi_dev_config_t;
 

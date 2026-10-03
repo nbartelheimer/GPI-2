@@ -14,3 +14,6 @@ ______bin_fortran_seg_use_bin_SOURCES = fortran_seg_use.f90
 ______bin_fortran_use_bin_SOURCES = fortran_use.f90
 
 test_pkglibexec_PROGRAMS = $(fortran_tests)
+
+test_pkglibexec_PROGRAMS += ../../bin/fortran_config.bin
+______bin_fortran_config_bin_SOURCES = fortran_config.f90

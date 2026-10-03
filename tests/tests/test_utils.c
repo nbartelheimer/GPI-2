@@ -88,6 +88,10 @@ tsuite_init (int argc, char *argv[])
       {
         config.network = GASPI_ETHERNET;
       }
+      if (strcmp (argv[i], "GASPI_PORTALS4") == 0)
+      {
+        config.network = GASPI_PORTALS4;
+      }
       if (strcmp (argv[i], "GASPI_IB") == 0)
       {
         config.network = GASPI_IB;

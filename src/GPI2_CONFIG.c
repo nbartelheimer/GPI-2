@@ -20,6 +20,9 @@ along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
 #include "GASPI_types.h"
 #include "GPI2_Types.h"
 #include "GPI2_Utility.h"
+#ifdef GPI2_DEVICE_PORTALS4
+#include <portals4.h>
+#endif
 
 #define GASPI_MAX_GROUPS  (32)
 #define GASPI_MAX_MSEGS   (255)
@@ -101,6 +104,12 @@ gaspi_config_t glb_gaspi_cfg =
     }
   },
   GASPI_OFI,                   //network type
+#elif GPI2_DEVICE_PORTALS4
+  {
+    .network_type = GASPI_PORTALS4,
+    .params.portals4.iface = PTL_IFACE_DEFAULT
+  },
+  GASPI_PORTALS4,
 #endif
   GASPI_DEFAULT_QSIZE,              //queue size max
   8,                                //queue count
@@ -182,22 +191,19 @@ pgaspi_config_set (const gaspi_config_t nconf)
   if (GASPI_ETHERNET != nconf.network)
 #elif GPI2_DEVICE_OFI
   if (GASPI_OFI != nconf.network)
+#elif GPI2_DEVICE_PORTALS4
+  if (GASPI_PORTALS4 != nconf.network)
 #endif
   {
-#ifdef DEBUG
-    const char *gaspi_network_str[] =
-      {
-        [GASPI_IB] = "GASPI_IB",
-        [GASPI_ROCE] = "GASPI_ROCE",
-        [GASPI_ETHERNET] = "GASPI_ETHERNET",
-        [GASPI_GEMINI] = "GASPI_GEMINI",
-        [GASPI_ARIES] = "GASPI_ARIES"
-      };
-#endif
-    GASPI_DEBUG_PRINT_ERROR ("Invalid value for parameter network (%s)",
-                             gaspi_network_str[nconf.network]);
+    GASPI_DEBUG_PRINT_ERROR ("Invalid value for parameter network (%d)",
+                             (int)nconf.network);
     return GASPI_ERR_CONFIG;
   }
+
+#if GPI2_DEVICE_PORTALS4
+  glb_gaspi_cfg.dev_config.params.portals4.iface =
+    nconf.dev_config.params.portals4.iface;
+#endif
 
 #if GPI2_DEVICE_OFI
   if (nconf.dev_config.params.ofi.use_shm >= 0)

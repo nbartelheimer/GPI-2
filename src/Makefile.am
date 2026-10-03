@@ -36,6 +36,13 @@ devices/ofi/GPI2_OFI_GRP.c devices/ofi/GPI2_OFI_SEG.c devices/ofi/GPI2_OFI.c
 SRCS += devices/ofi/GPI2_OFI.h
 default_includes += -I$(abs_top_srcdir)/src/devices/ofi @ac_inc_ofi@ -DGPI2_DEVICE_OFI
 endif
+if WITH_PORTALS4
+SRCS += devices/portals4/GPI2_PORTALS4.c devices/portals4/GPI2_PORTALS4_IO.c \
+devices/portals4/GPI2_PORTALS4_PASSIVE.c devices/portals4/GPI2_PORTALS4_ATOMIC.c \
+devices/portals4/GPI2_PORTALS4_GRP.c devices/portals4/GPI2_PORTALS4_SEG.c \
+devices/portals4/GPI2_PORTALS4.h
+default_includes += -I$(abs_top_srcdir)/src/devices/portals4 @PORTALS4_CFLAGS@ -DGPI2_DEVICE_PORTALS4
+endif
 #else
 if WITH_ETHERNET
 SRCS += devices/tcp/list.c devices/tcp/rb.c devices/tcp/tcp_device.c \
@@ -72,6 +79,7 @@ lib_LTLIBRARIES = libGPI2.la
 libGPI2_la_SOURCES = $(SRCS)
 libGPI2_la_CFLAGS = $(lib_default_cflags) -O2
 libGPI2_la_CPPFLAGS = $(default_includes)
+libGPI2_la_LIBADD = @ac_lib_portals4@
 
 # DEBUG AND STAT LIBRARIES
 if ENABLE_DEBUG
@@ -79,6 +87,7 @@ lib_LTLIBRARIES += libGPI2-dbg.la
 libGPI2_dbg_la_SOURCES = $(SRCS)
 libGPI2_dbg_la_CFLAGS = $(lib_default_cflags) -g -O0 -DDEBUG
 libGPI2_dbg_la_CPPFLAGS = $(default_includes)
+libGPI2_dbg_la_LIBADD = @ac_lib_portals4@
 if ENABLE_ASAN
 libGPI2_dbg_la_CFLAGS += -fno-omit-frame-pointer -fsanitize=address
 endif
@@ -95,6 +104,7 @@ lib_LTLIBRARIES += libGPI2-stats.la
 libGPI2_stats_la_SOURCES = $(SRCS)
 libGPI2_stats_la_CFLAGS = $(lib_default_cflags) -g -O0 -DGPI2_STATS -DGPI2_TRACE -DDEBUG
 libGPI2_stats_la_CPPFLAGS = $(default_includes)
+libGPI2_stats_la_LIBADD = @ac_lib_portals4@
 endif
 
 # FORTRAN MODULES
@@ -121,14 +131,6 @@ DISTCLEANFILES = GPI2.pc
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = GPI2.pc
-
-if WITH_INFINIBAND
-install-data-hook:
-	echo "Libs.private: @ac_lib_infiniband@ -pthread" >> $(libdir)/pkgconfig/GPI2.pc
-else
-install-data-hook:
-	echo "Libs.private: -lrt -pthread" >> $(libdir)/pkgconfig/GPI2.pc
-endif
 
 # CLEAN
 CLEANFILES = *~ *.bak *.mod

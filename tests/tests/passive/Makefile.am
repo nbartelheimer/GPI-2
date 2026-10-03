@@ -29,3 +29,8 @@ ______bin_passive_send_recv_notify_bin_SOURCES= passive_send_recv_notify.c $(aux
 ______bin_passive_send_recv_notify_bin_LDFLAGS= -lpthread
 
 test_pkglibexec_PROGRAMS = $(passive_tests)
+
+if WITH_PORTALS4
+test_pkglibexec_PROGRAMS += ../../bin/passive_backlog.bin
+______bin_passive_backlog_bin_SOURCES = passive_backlog.c $(auxSRCS)
+endif

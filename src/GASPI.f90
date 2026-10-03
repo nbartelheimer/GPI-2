@@ -42,6 +42,8 @@ module GASPI
       enumerator :: GASPI_ETHERNET=2
       enumerator :: GASPI_GEMINI=3
       enumerator :: GASPI_ARIES=4
+      enumerator :: GASPI_OFI=5
+      enumerator :: GASPI_PORTALS4=6
     end enum
 
     enum, bind(C) !:: gaspi_operation_t
@@ -83,10 +85,22 @@ module GASPI
       integer(gaspi_int) :: tcp_port
     end type tcp_dev_params_t
 
+    type, bind(C) :: ofi_dev_params_t
+      integer(gaspi_int) :: use_shm
+      integer(gaspi_int) :: provider_info
+      integer(gaspi_int) :: progress_auto
+    end type ofi_dev_params_t
+
+    type, bind(C) :: portals4_dev_params_t
+      integer(gaspi_int) :: iface
+    end type portals4_dev_params_t
+
     type, bind(C) :: gaspi_dev_config_t
       integer (gaspi_int) :: network
       type (ib_dev_params_t) :: params_ib
       type (tcp_dev_params_t) :: params_tcp
+      type (ofi_dev_params_t) :: params_ofi
+      type (portals4_dev_params_t) :: params_portals4
     end type gaspi_dev_config_t
 
     type, bind(C) :: gaspi_config_t
@@ -108,7 +122,9 @@ module GASPI
       integer (gaspi_number_t) :: passive_transfer_size_max
       integer (gaspi_size_t)   :: allreduce_buf_size
       integer (gaspi_number_t) :: allreduce_elem_max
+      integer (gaspi_number_t) :: rw_list_elem_max
       integer (gaspi_number_t) :: build_infrastructure
+      type(c_ptr)             :: user_defined
     end type gaspi_config_t
 
     interface ! gaspi_config_get

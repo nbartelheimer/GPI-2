@@ -1,0 +1,92 @@
+/*
+Copyright (c) Goethe University Frankfurt MSQC - Niklas Bartelheimer
+<bartelheimer@em.uni-frankfurt.de>, 2023-2026
+
+This file is part of GPI-2.
+
+GPI-2 is free software; you can redistribute it
+and/or modify it under the terms of the GNU General Public License
+version 3 as published by the Free Software Foundation.
+
+GPI-2 is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with GPI-2. If not, see <http://www.gnu.org/licenses/>.
+*/
+#include "GASPI.h"
+#include "GPI2.h"
+#include "GPI2_Coll.h"
+#include "GPI2_PORTALS4.h"
+#include <sys/mman.h>
+#include <sys/timeb.h>
+#include <unistd.h>
+
+/* Group utilities */
+static int
+pgaspi_portals4_wait_groups(gaspi_context_t* const gctx)
+{
+  int ret;
+  ptl_ct_event_t ce;
+  const ptl_size_t nr = gctx->ne_count_grp;
+  gaspi_portals4_ctx* const dev = gctx->device->ctx;
+
+  ret = PtlCTWait(dev->group_atomic_ct_h, dev->group_atomic_ct_cnt + nr, &ce);
+  if(ret != PTL_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("PtlCTWait failed with %d", ret);
+    return GASPI_ERROR;
+  }
+
+  if(ce.failure > 0)
+  {
+    pgaspi_portals4_errors(gctx, dev->group_atomic_err_eq_h, GASPI_COLL_QP);
+    GASPI_DEBUG_PRINT_ERROR(
+        "Failed request. Collectives queue might be broken");
+    return GASPI_ERROR;
+  }
+  gctx->ne_count_grp -= nr;
+  dev->group_atomic_ct_cnt = ce.success;
+  return nr;
+}
+
+int
+pgaspi_dev_poll_groups(gaspi_context_t* const gctx)
+{
+  gaspi_portals4_ctx* dev = gctx->device->ctx;
+  while(GASPI_ATOMIC_TRY_LOCK(&dev->group_lock))
+    GASPI_DELAY();
+  int ret = pgaspi_portals4_wait_groups(gctx);
+  GASPI_ATOMIC_UNLOCK(&dev->group_lock);
+  return ret;
+}
+
+int
+pgaspi_dev_post_group_write(gaspi_context_t* const gctx, void* local_addr,
+                            int length, int dst, void* remote_addr,
+                            unsigned char GASPI_UNUSED(group))
+{
+  int ret;
+  gaspi_portals4_ctx* const dev = (gaspi_portals4_ctx*)gctx->device->ctx;
+
+  while(GASPI_ATOMIC_TRY_LOCK(&dev->group_lock))
+    GASPI_DELAY();
+  ret = PtlPut(dev->group_atomic_md_h, (ptl_size_t)local_addr, length,
+               PORTALS4_ACK_TYPE, dev->remote_info[dst].phys_address,
+               dev->data_pt_idx, 0, (ptl_size_t)remote_addr,
+               (void*)(uintptr_t)dst, 0);
+
+  if(ret != PTL_OK)
+  {
+    GASPI_DEBUG_PRINT_ERROR("PtlPut failed with %d", ret);
+    GASPI_ATOMIC_UNLOCK(&dev->group_lock);
+    return -1;
+  }
+
+  gctx->ne_count_grp++;
+  ret = pgaspi_portals4_wait_groups(gctx);
+  GASPI_ATOMIC_UNLOCK(&dev->group_lock);
+  return ret < 0 ? -1 : 0;
+}
